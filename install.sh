@@ -35,15 +35,12 @@ apt install -y nginx postgresql postgresql-contrib python3-pip python3-venv \
 log_success "Dependencies installed"
 
 # ============================================
-# STEP 2: PostgreSQL 17 Setup
+# STEP 2: PostgreSQL Setup (Ubuntu 24.04 compatible)
 # ============================================
-log_info "🐘 Step 2/9: Setting up PostgreSQL 17..."
+log_info "🐘 Step 2/9: Setting up PostgreSQL..."
 
-# Add official PostgreSQL repo
-sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
-wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
-apt update
-apt install -y postgresql-17 postgresql-contrib-17
+# Ubuntu 24.04 has PostgreSQL 16 in default repos (fully compatible)
+apt install -y postgresql postgresql-contrib
 
 systemctl enable postgresql
 systemctl start postgresql
@@ -57,7 +54,7 @@ sudo -u postgres psql -c "CREATE DATABASE lumon_db OWNER lumon;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE lumon_db TO lumon;"
 sudo -u postgres psql -d lumon_db -c "GRANT ALL ON SCHEMA public TO lumon;"
 
-log_success "PostgreSQL 17 configured"
+log_success "PostgreSQL configured"
 
 # ============================================
 # STEP 3: Domain Configuration
@@ -167,8 +164,15 @@ log_success "Xray Core v${XRAY_VERSION} installed"
 log_info "🚀 Step 6/9: Installing Hysteria2..."
 mkdir -p /etc/hysteria
 
-# Get latest version
-HY_VERSION=$(curl -s https://api.github.com/repos/apernet/hysteria/releases/latest | jq -r 'first(.[] | select(.name != "") | .tag_name)' | sed 's/app\/v//')
+# Get latest version (fixed jq filter)
+HY_VERSION=$(curl -s https://api.github.com/repos/apernet/hysteria/releases/latest | jq -r '.tag_name' | sed 's/app\/v//')
+
+# Fallback if version is empty
+if [ -z "$HY_VERSION" ] || [ "$HY_VERSION" = "null" ]; then
+    log_warning "Could not fetch latest Hysteria version, using fallback..."
+    HY_VERSION="2.4.1"  # Known stable version
+fi
+
 log_info "Latest Hysteria version: ${HY_VERSION}"
 
 # Download and install
