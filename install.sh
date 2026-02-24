@@ -48,9 +48,13 @@ systemctl start postgresql
 # Generate secure password
 DB_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
 
-# Create DB and user
-sudo -u postgres psql -c "CREATE USER lumon WITH PASSWORD '${DB_PASSWORD}';"
-sudo -u postgres psql -c "CREATE DATABASE lumon_db OWNER lumon;"
+# Create DB and user (idempotent - safe to re-run)
+sudo -u postgres psql -c "SELECT 1 FROM pg_roles WHERE rolname='lumon'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE USER lumon WITH PASSWORD '${DB_PASSWORD}';"
+
+sudo -u postgres psql -lqt | cut -d \| -f 1 | grep -qw lumon_db || \
+    sudo -u postgres psql -c "CREATE DATABASE lumon_db OWNER lumon;"
+
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE lumon_db TO lumon;"
 sudo -u postgres psql -d lumon_db -c "GRANT ALL ON SCHEMA public TO lumon;"
 
@@ -331,37 +335,70 @@ ln -sf /etc/nginx/sites-available/decoy /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
 # Test config
-nginx -t
+# nginx -t
 
-log_success "Nginx configured"
+# Don't test/reload yet - certificates don't exist yet
+# Will test and reload after certbot in Step 8
+log_info "Nginx config created (waiting for SSL certs)"
 
 # ============================================
 # STEP 8: SSL Certificates (Let's Encrypt)
 # ============================================
 log_info "🔒 Step 8/9: Obtaining SSL certificates..."
 
-# Stop nginx for standalone mode
+# Verify domains resolve to this server
+log_info "Verifying domain DNS records..."
+for domain in "${SUB_DOMAIN}" "${DECOY_DOMAIN}"; do
+    if ! dig +short "$domain" | grep -q "$(curl -s https://ifconfig.me)"; then
+        log_warning "⚠️  $domain may not point to this server (${SERVER_IP})"
+        log_warning "   Make sure A record is set correctly before proceeding"
+    fi
+done
+
+# Stop nginx for standalone certbot mode
+log_info "Stopping nginx for certificate issuance..."
 systemctl stop nginx
 
-# Get certificates
+# Ensure port 80 is free
+if ss -tlnp | grep -q ':80 '; then
+    log_error "Port 80 is still in use. Cannot obtain certificates."
+    exit 1
+fi
+
+# Get certificates with error handling
 CERTBOT_ARGS="--non-interactive --agree-tos --email ${LETSENCRYPT_EMAIL:-admin@${SUB_DOMAIN}}"
 
-certbot certonly --standalone -d ${SUB_DOMAIN} ${CERTBOT_ARGS}
-certbot certonly --standalone -d ${DECOY_DOMAIN} ${CERTBOT_ARGS}
+log_info "Requesting certificate for ${SUB_DOMAIN}..."
+if ! certbot certonly --standalone -d "${SUB_DOMAIN}" ${CERTBOT_ARGS}; then
+    log_error "Failed to obtain certificate for ${SUB_DOMAIN}"
+    log_error "Check that:"
+    log_error "  - Domain A record points to this server"
+    log_error "  - Port 80 is not blocked by firewall"
+    log_error "  - No other service is using port 80"
+    exit 1
+fi
 
-# Start nginx
-systemctl start nginx
+log_info "Requesting certificate for ${DECOY_DOMAIN}..."
+if ! certbot certonly --standalone -d "${DECOY_DOMAIN}" ${CERTBOT_ARGS}; then
+    log_error "Failed to obtain certificate for ${DECOY_DOMAIN}"
+    exit 1
+fi
 
 # Setup auto-renewal
-if ! crontab -l | grep -q "certbot renew"; then
+if ! crontab -l 2>/dev/null | grep -q "certbot renew"; then
     (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
     log_success "Auto-renewal configured"
 fi
 
+# NOW test and reload nginx (certificates exist!)
+log_info "Testing and reloading Nginx..."
+nginx -t
+systemctl reload nginx
+
 # Now we can start Hysteria (needs SSL certs)
 systemctl start hysteria
 
-log_success "SSL certificates obtained for ${SUB_DOMAIN} and ${DECOY_DOMAIN}"
+log_success "SSL certificates obtained and Nginx reloaded"
 
 # ============================================
 # STEP 9: Python Application Setup
