@@ -349,7 +349,7 @@ log_info "🔒 Step 8/9: Obtaining SSL certificates..."
 # Verify domains resolve to this server
 log_info "Verifying domain DNS records..."
 for domain in "${SUB_DOMAIN}" "${DECOY_DOMAIN}"; do
-    if ! dig +short "$domain" | grep -q "$(curl -s https://ifconfig.me)"; then
+    if ! host "$domain" | grep -q "$(curl -s https://ifconfig.me)"; then
         log_warning "⚠️  $domain may not point to this server (${SERVER_IP})"
         log_warning "   Make sure A record is set correctly before proceeding"
     fi
@@ -393,7 +393,13 @@ fi
 # NOW test and reload nginx (certificates exist!)
 log_info "Testing and reloading Nginx..."
 nginx -t
-systemctl reload nginx
+
+# Start nginx if stopped, otherwise reload
+if systemctl is-active --quiet nginx; then
+    systemctl reload nginx
+else
+    systemctl start nginx
+fi
 
 # Now we can start Hysteria (needs SSL certs)
 systemctl start hysteria
@@ -537,21 +543,21 @@ log_success "Automatic backups configured (daily at 3:00)"
 # ============================================
 echo ""
 echo "================================================"
-echo "  ${GREEN}✅ LUMON Panel Installation Complete!${NC}"
+echo -e "  ${GREEN}✅ LUMON Panel Installation Complete!${NC}"
 echo "================================================"
 echo ""
-echo "  📡 Subscription: https://${SUB_DOMAIN}"
-echo "  🎭 Decoy:        https://${DECOY_DOMAIN}"
-echo "  🗄️  Database:    lumon_db (PostgreSQL 17)"
-echo "  📁 Config:       /etc/lumon/lumon_config.json"
-echo "  📝 Logs:         /var/log/lumon/"
-echo "  💾 Backups:      /var/backups/lumon/"
+echo -e "  📡 Subscription: https://${SUB_DOMAIN}"
+echo -e "  🎭 Decoy:        https://${DECOY_DOMAIN}"
+echo -e "  🗄️  Database:    lumon_db (PostgreSQL 16)"
+echo -e "  📁 Config:       /etc/lumon/lumon_config.json"
+echo -e "  📝 Logs:         /var/log/lumon/"
+echo -e "  💾 Backups:      /var/backups/lumon/"
 echo ""
-echo "  🔐 Save this database password:"
-echo "     ${YELLOW}${DB_PASSWORD}${NC}"
+echo -e "  🔐 Save this database password:"
+echo -e "     ${YELLOW}${DB_PASSWORD}${NC}"
 echo ""
-echo "  🚀 To access CLI menu:"
-echo "     ${YELLOW}lumon-cli${NC}"
+echo -e "  🚀 To access CLI menu:"
+echo -e "     ${YELLOW}lumon-cli${NC}" 
 echo ""
 echo "  📋 Next steps:"
 echo "     1. Copy lumon/ files to /opt/lumon/"
