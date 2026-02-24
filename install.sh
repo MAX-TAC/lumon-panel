@@ -1,0 +1,520 @@
+#!/bin/bash
+# LUMON Panel Installation Script v1.0
+# Ubuntu 24.04 | PostgreSQL 17 | Nginx | Xray | Hysteria2
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[✓]${NC} $1"; }
+log_warning() { echo -e "${YELLOW}[!]${NC} $1"; }
+log_error() { echo -e "${RED}[✗]${NC} $1"; }
+
+# Check root
+if [ "$EUID" -ne 0 ]; then
+    log_error "Please run as root: sudo ./install.sh"
+    exit 1
+fi
+
+log_info "🚀 Starting LUMON Panel installation..."
+
+# ============================================
+# STEP 1: System Update & Dependencies
+# ============================================
+log_info "📦 Step 1/9: Updating system..."
+apt update && apt upgrade -y
+apt install -y nginx postgresql postgresql-contrib python3-pip python3-venv \
+    python3-dev libpq-dev curl wget unzip nano jq openssl cron \
+    certbot python3-certbot-nginx logrotate -y
+log_success "Dependencies installed"
+
+# ============================================
+# STEP 2: PostgreSQL 17 Setup
+# ============================================
+log_info "🐘 Step 2/9: Setting up PostgreSQL 17..."
+
+# Add official PostgreSQL repo
+sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+apt update
+apt install -y postgresql-17 postgresql-contrib-17
+
+systemctl enable postgresql
+systemctl start postgresql
+
+# Generate secure password
+DB_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32)
+
+# Create DB and user
+sudo -u postgres psql -c "CREATE USER lumon WITH PASSWORD '${DB_PASSWORD}';"
+sudo -u postgres psql -c "CREATE DATABASE lumon_db OWNER lumon;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE lumon_db TO lumon;"
+sudo -u postgres psql -d lumon_db -c "GRANT ALL ON SCHEMA public TO lumon;"
+
+log_success "PostgreSQL 17 configured"
+
+# ============================================
+# STEP 3: Domain Configuration
+# ============================================
+log_info "🌐 Step 3/9: Domain configuration..."
+echo ""
+echo "Enter domains (without https://):"
+read -p "📡 Subscription domain (e.g., cdn.example.com): " SUB_DOMAIN
+read -p "🎭 Decoy domain (e.g., portal.example.com): " DECOY_DOMAIN
+read -p "📧 Email for Let's Encrypt (optional): " LETSENCRYPT_EMAIL
+
+if [ -z "$SUB_DOMAIN" ] || [ -z "$DECOY_DOMAIN" ]; then
+    log_error "Domains cannot be empty!"
+    exit 1
+fi
+
+mkdir -p /etc/lumon
+
+# Save config
+cat > /etc/lumon/lumon_config.json << EOF
+{
+    "subscription_domain": "${SUB_DOMAIN}",
+    "decoy_domain": "${DECOY_DOMAIN}",
+    "subscription_path_template": "/sub/{uuid}/{token}",
+    "decoy_path": "/var/www/decoy",
+    "db_password": "${DB_PASSWORD}",
+    "log_path": "/var/log/lumon",
+    "backup_path": "/var/backups/lumon",
+    "backup_retention_days": 7,
+    "enable_ip_logging": true,
+    "enable_rate_limiting": false,
+    "install_date": "$(date -Iseconds)"
+}
+EOF
+chmod 600 /etc/lumon/lumon_config.json
+
+log_success "Configuration saved to /etc/lumon/lumon_config.json"
+
+# ============================================
+# STEP 4: Logging Setup
+# ============================================
+log_info "📝 Step 4/9: Setting up logging..."
+mkdir -p /var/log/lumon
+touch /var/log/lumon/{lumon.log,xray.log,hysteria.log,api.log,backup.log}
+chmod 640 /var/log/lumon/*
+chown root:adm /var/log/lumon/*
+log_success "Logging configured at /var/log/lumon/"
+
+# ============================================
+# STEP 5: Install Xray Core
+# ============================================
+log_info "☢️ Step 5/9: Installing Xray Core..."
+mkdir -p /etc/xray
+
+# Get latest version
+XRAY_VERSION=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name | sed 's/v//')
+log_info "Latest Xray version: ${XRAY_VERSION}"
+
+# Download and install
+wget -q https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-linux-64.zip -O /tmp/xray.zip
+unzip -q -o /tmp/xray.zip -d /usr/local/bin/
+chmod +x /usr/local/bin/xray
+rm /tmp/xray.zip
+
+# Create config
+cat > /etc/xray/config.json << 'EOF'
+{
+    "inbounds": [],
+    "outbounds": [{
+        "protocol": "freedom",
+        "tag": "direct"
+    }],
+    "log": {
+        "access": "/var/log/lumon/xray.log",
+        "error": "/var/log/lumon/xray.log",
+        "loglevel": "warning"
+    }
+}
+EOF
+
+# Create systemd service
+cat > /etc/systemd/system/xray.service << 'EOF'
+[Unit]
+Description=Xray Core Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/xray run -config /etc/xray/config.json
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable xray
+systemctl start xray
+
+log_success "Xray Core v${XRAY_VERSION} installed"
+
+# ============================================
+# STEP 6: Install Hysteria2
+# ============================================
+log_info "🚀 Step 6/9: Installing Hysteria2..."
+mkdir -p /etc/hysteria
+
+# Get latest version
+HY_VERSION=$(curl -s https://api.github.com/repos/apernet/hysteria/releases/latest | jq -r 'first(.[] | select(.name != "") | .tag_name)' | sed 's/app\/v//')
+log_info "Latest Hysteria version: ${HY_VERSION}"
+
+# Download and install
+wget -q https://github.com/apernet/hysteria/releases/download/app/v${HY_VERSION}/hysteria-linux-amd64 -O /usr/local/bin/hysteria
+chmod +x /usr/local/bin/hysteria
+
+# Generate auth secrets
+HY_AUTH=$(openssl rand -base64 32)
+HY_OBFS=$(openssl rand -base64 16)
+
+# Create config (TLS paths will be set after certbot)
+cat > /etc/hysteria/config.yaml << EOF
+listen: :443
+tls:
+    cert: /etc/letsencrypt/live/${SUB_DOMAIN}/fullchain.pem
+    key: /etc/letsencrypt/live/${SUB_DOMAIN}/privkey.pem
+auth:
+    type: password
+    password: ${HY_AUTH}
+obfs:
+    type: salamander
+    salamander:
+        password: ${HY_OBFS}
+log:
+    level: info
+    output: /var/log/lumon/hysteria.log
+EOF
+
+# Save auth to config for later reference
+jq --arg auth "$HY_AUTH" --arg obfs "$HY_OBFS" '.hysteria_auth = $auth | .hysteria_obfs = $obfs' /etc/lumon/lumon_config.json > /tmp/lc.json && mv /tmp/lc.json /etc/lumon/lumon_config.json
+
+# Create systemd service
+cat > /etc/systemd/system/hysteria.service << EOF
+[Unit]
+Description=Hysteria2 Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable hysteria
+# Don't start yet - need SSL certs first
+
+log_success "Hysteria2 v${HY_VERSION} installed"
+
+# ============================================
+# STEP 7: Nginx Configuration
+# ============================================
+log_info "🌍 Step 7/9: Configuring Nginx..."
+
+# Create decoy directory
+mkdir -p /var/www/decoy
+
+# Nginx config for subscription domain
+cat > /etc/nginx/sites-available/lumon << EOF
+server {
+    listen 80;
+    server_name ${SUB_DOMAIN};
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${SUB_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${SUB_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${SUB_DOMAIN}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers on;
+
+    # Security headers
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Rate limiting (optional)
+    # limit_req_zone \$binary_remote_addr zone=sub_limit:10m rate=10r/s;
+    # limit_req zone=sub_limit burst=20 nodelay;
+
+    # Subscription endpoint only
+    location /sub/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300;
+    }
+
+    # Block everything else
+    location / {
+        return 404;
+    }
+
+    # Health check
+    location /health {
+        access_log off;
+        return 200 "OK\n";
+        add_header Content-Type text/plain;
+    }
+}
+EOF
+
+# Nginx config for decoy domain
+cat > /etc/nginx/sites-available/decoy << EOF
+server {
+    listen 80;
+    server_name ${DECOY_DOMAIN};
+    return 301 https://\$server_name\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${DECOY_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${DECOY_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DECOY_DOMAIN}/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256;
+    ssl_prefer_server_ciphers on;
+
+    root /var/www/decoy;
+    index index.html;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    # Block sensitive files
+    location ~ /\. {
+        deny all;
+    }
+}
+EOF
+
+# Enable sites
+ln -sf /etc/nginx/sites-available/lumon /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/decoy /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default
+
+# Test config
+nginx -t
+
+log_success "Nginx configured"
+
+# ============================================
+# STEP 8: SSL Certificates (Let's Encrypt)
+# ============================================
+log_info "🔒 Step 8/9: Obtaining SSL certificates..."
+
+# Stop nginx for standalone mode
+systemctl stop nginx
+
+# Get certificates
+CERTBOT_ARGS="--non-interactive --agree-tos --email ${LETSENCRYPT_EMAIL:-admin@${SUB_DOMAIN}}"
+
+certbot certonly --standalone -d ${SUB_DOMAIN} ${CERTBOT_ARGS}
+certbot certonly --standalone -d ${DECOY_DOMAIN} ${CERTBOT_ARGS}
+
+# Start nginx
+systemctl start nginx
+
+# Setup auto-renewal
+if ! crontab -l | grep -q "certbot renew"; then
+    (crontab -l 2>/dev/null; echo "0 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
+    log_success "Auto-renewal configured"
+fi
+
+# Now we can start Hysteria (needs SSL certs)
+systemctl start hysteria
+
+log_success "SSL certificates obtained for ${SUB_DOMAIN} and ${DECOY_DOMAIN}"
+
+# ============================================
+# STEP 9: Python Application Setup
+# ============================================
+log_info "🐍 Step 9/9: Setting up Python application..."
+
+# Create app directory
+mkdir -p /opt/lumon
+cd /opt/lumon
+
+# Clone or copy the project
+# For now, we'll create a minimal setup
+python3 -m venv venv
+source venv/bin/activate
+
+pip install --upgrade pip
+pip install fastapi uvicorn sqlalchemy psycopg2-binary typer questionary cryptography python-multipart jinja2
+
+# Create CLI entry point
+cat > /usr/local/bin/lumon-cli << 'EOFCLI'
+#!/bin/bash
+cd /opt/lumon
+source venv/bin/activate
+exec python3 -m lumon.cli_menu "$@"
+EOFCLI
+chmod +x /usr/local/bin/lumon-cli
+
+# Create systemd service for LUMON API
+cat > /etc/systemd/system/lumon-api.service << EOF
+[Unit]
+Description=LUMON Panel API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lumon
+ExecStart=/opt/lumon/venv/bin/uvicorn lumon.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+Environment=PATH=/opt/lumon/venv/bin
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable lumon-api
+systemctl start lumon-api
+
+log_success "Python application installed"
+
+# ============================================
+# Create Decoy Website
+# ============================================
+log_info "🎭 Creating decoy website..."
+
+cat > /var/www/decoy/index.html << 'EOFHTML'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUMON Industries - Employee Portal</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#1a1a2e;color:#eee;min-height:100vh;display:flex;align-items:center;justify-content:center}
+        .container{background:#16213e;padding:40px;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);max-width:400px;width:100%}
+        .logo{text-align:center;margin-bottom:30px}
+        .logo h1{color:#0f3460;font-size:2em;letter-spacing:5px}
+        .form-group{margin-bottom:20px}
+        .form-group label{display:block;margin-bottom:8px;color:#aaa;font-size:.9em}
+        .form-group input{width:100%;padding:12px;border:1px solid #0f3460;border-radius:5px;background:#1a1a2e;color:#fff;font-size:1em}
+        .form-group input:focus{outline:none;border-color:#e94560}
+        button{width:100%;padding:12px;background:#e94560;border:none;border-radius:5px;color:#fff;font-size:1em;cursor:pointer;transition:background .3s}
+        button:hover{background:#c73e54}
+        .footer{text-align:center;margin-top:20px;color:#666;font-size:.8em}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo"><h1>LUMON</h1><p>Employee Portal</p></div>
+        <form onsubmit="event.preventDefault();">
+            <div class="form-group"><label>Employee ID</label><input type="text" placeholder="Enter your ID"></div>
+            <div class="form-group"><label>Password</label><input type="password" placeholder="Enter password"></div>
+            <button type="submit">Sign In</button>
+        </form>
+        <div class="footer">
+            <p>© 2024 LUMON Industries. All rights reserved.</p>
+            <p>This is a secure corporate portal.</p>
+        </div>
+    </div>
+</body>
+</html>
+EOFHTML
+
+log_success "Decoy website created at /var/www/decoy"
+log_warning "💡 Tip: You can replace /var/www/decoy/index.html with your own decoy"
+
+# ============================================
+# Setup Backups
+# ============================================
+log_info "💾 Setting up automatic backups..."
+
+mkdir -p /var/backups/lumon
+
+# Backup script for database
+cat > /usr/local/bin/lumon-backup-db << 'EOFBK'
+#!/bin/bash
+CONFIG="/etc/lumon/lumon_config.json"
+DB_PASSWORD=$(jq -r '.db_password' "$CONFIG")
+BACKUP_PATH=$(jq -r '.backup_path' "$CONFIG")
+RETENTION=$(jq -r '.backup_retention_days' "$CONFIG")
+
+mkdir -p "$BACKUP_PATH"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_PATH/db-${TIMESTAMP}.sql.gz"
+
+pg_dump -U lumon -h localhost lumon_db | gzip > "$BACKUP_FILE"
+
+# Remove old backups
+find "$BACKUP_PATH" -name "db-*.sql.gz" -mtime +$RETENTION -delete
+
+echo "Backup created: $BACKUP_FILE"
+EOFBK
+chmod +x /usr/local/bin/lumon-backup-db
+
+# Add to cron (daily at 3 AM)
+if ! crontab -l | grep -q "lumon-backup-db"; then
+    (crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/lumon-backup-db >> /var/log/lumon/backup.log 2>&1") | crontab -
+fi
+
+log_success "Automatic backups configured (daily at 3:00)"
+
+# ============================================
+# Installation Complete
+# ============================================
+echo ""
+echo "================================================"
+echo "  ${GREEN}✅ LUMON Panel Installation Complete!${NC}"
+echo "================================================"
+echo ""
+echo "  📡 Subscription: https://${SUB_DOMAIN}"
+echo "  🎭 Decoy:        https://${DECOY_DOMAIN}"
+echo "  🗄️  Database:    lumon_db (PostgreSQL 17)"
+echo "  📁 Config:       /etc/lumon/lumon_config.json"
+echo "  📝 Logs:         /var/log/lumon/"
+echo "  💾 Backups:      /var/backups/lumon/"
+echo ""
+echo "  🔐 Save this database password:"
+echo "     ${YELLOW}${DB_PASSWORD}${NC}"
+echo ""
+echo "  🚀 To access CLI menu:"
+echo "     ${YELLOW}lumon-cli${NC}"
+echo ""
+echo "  📋 Next steps:"
+echo "     1. Copy lumon/ files to /opt/lumon/"
+echo "     2. Run database migrations"
+echo "     3. Create your first user"
+echo ""
+echo "================================================"
