@@ -64,7 +64,7 @@ def check_service_status(name: str) -> str:
 # USER MANAGEMENT
 # ============================================
 def list_users():
-    """List all users with stats"""
+    """List all users with stats and subscription links"""
     print_header("User List")
 
     db = get_db_session()
@@ -74,15 +74,42 @@ def list_users():
         if not users:
             print("📭 No users found")
         else:
-            print(f"{'ID':<4} {'Username':<20} {'Status':<10} {'Created':<20} {'Last Seen':<20}")
-            print("-" * 80)
+            print(f"{'ID':<4} {'Username':<25} {'Status':<10} {'Last Seen':<20}")
+            print("-" * 65)
             for user in users:
                 status = "✅ Active" if user.is_active else "❌ Disabled"
                 last_seen = user.last_seen.strftime("%Y-%m-%d %H:%M") if user.last_seen else "Never"
-                print(f"{user.id:<4} {user.username:<20} {status:<10} {user.created_at.strftime('%Y-%m-%d %H:%M'):<20} {last_seen:<20}")
+                print(f"{user.id:<4} {user.username:<25} {status:<10} {last_seen:<20}")
 
-        print()
-        print("💡 Tip: Use 'Create user' to add new users")
+            print()
+            print("💡 Tip: Select a user to view/copy subscription URL")
+
+        # Ask if user wants to view subscription URL
+        if users and questionary.confirm("\n🔗 View subscription URL for a user?").ask():
+            choices = [f"{u.id} - {u.username}" for u in users] + ["← Back"]
+            choice = questionary.select("Select user:", choices=choices).ask()
+
+            if choice != "← Back":
+                user_id = int(choice.split(" - ")[0])
+                user = db.query(User).filter_by(id=user_id).first()
+
+                if user:
+                    sub_url = f"https://{config.subscription_domain}{config.subscription_path_template.format(uuid=user.uuid, token=user.sub_token)}"
+
+                    print(f"\n📋 Subscription URL for {user.username}:")
+                    print(f"   {sub_url}")
+                    print(f"\n📱 Individual configs:")
+                    print(f"   VLESS:     vless://{user.uuid}@{config.subscription_domain}:443?...")
+                    print(f"   Hysteria2: hysteria2://{user.hysteria_auth}@{config.subscription_domain}:443?...")
+
+                    if questionary.confirm("📋 Copy URL to clipboard?").ask():
+                        # Try to copy to clipboard (works in some terminals)
+                        import subprocess
+                        try:
+                            subprocess.run(['xclip', '-selection', 'clipboard'], input=sub_url.encode(), check=False)
+                            print("✅ Copied to clipboard!")
+                        except:
+                            print("⚠️  xclip not available, select and copy manually")
 
     finally:
         db.close()
@@ -93,13 +120,13 @@ def create_user():
     """Create new user with auto-generated credentials"""
     print_header("Create User")
 
-    username = questionary.text("Enter username (letters/numbers only):").ask()
-    if not username or not username.replace("_", "").isalnum():
-        print("❌ Invalid username")
+    username = questionary.text("Enter username (letters/numbers/dots/underscores):").ask()
+
+    if not username or not all(c.isalnum() or c in '._-' for c in username):
+        print("❌ Username can only contain letters, numbers, dots, underscores, or hyphens")
         input("Press Enter to continue...")
         return
 
-    # Generate credentials
     import uuid
     import secrets
 
@@ -262,21 +289,45 @@ def edit_hysteria_config():
 
     print(f"📝 Opening {config_path} in nano...")
     print("💡 Ctrl+X to save, Ctrl+O + Enter to confirm")
-    input("Press Enter to open editor...")
+    print("💡 Press Enter to open editor, or Ctrl+C to cancel")
 
-    run_command(['nano', config_path])
+    # Запускаем nano БЕЗ capture_output - важно для интерактивных программ!
+    try:
+        result = subprocess.run(['nano', config_path])
 
-    if questionary.confirm("Validate and restart Hysteria2?").ask():
-        result = run_command(['hysteria', 'server', '-c', config_path, '--test'])
         if result.returncode == 0:
-            if restart_service('hysteria'):
-                print("✅ Config valid, service restarted")
-            else:
-                print("❌ Failed to restart service")
+            print("\n✅ Editor closed")
+
+            if questionary.confirm("Validate and restart Hysteria2?").ask():
+                # Test config
+                test_result = subprocess.run(
+                    ['hysteria', 'server', '-c', config_path, '--test'],
+                    capture_output=True,
+                    text=True
+                )
+
+                if test_result.returncode == 0:
+                    if restart_service('hysteria'):
+                        print("✅ Config valid, service restarted")
+                    else:
+                        print("❌ Failed to restart service")
+                else:
+                    print(f"❌ Config validation failed:")
+                    print(test_result.stderr[:500] if test_result.stderr else "Unknown error")
+
+                    if questionary.confirm("Revert changes from backup?").ask():
+                        if os.path.exists(config_path + '.bak'):
+                            shutil.copy2(config_path + '.bak', config_path)
+                            print("✅ Reverted from backup")
+                        else:
+                            print("⚠️  No backup found - manual revert required")
         else:
-            print(f"❌ Config validation failed:\n{result.stderr}")
-            if questionary.confirm("Revert changes?").ask():
-                print("⚠️  Manual revert required - backup your configs!")
+            print(f"⚠️  Editor exited with code {result.returncode}")
+
+    except KeyboardInterrupt:
+        print("\n⚠️  Editor cancelled")
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
     input("\nPress Enter to continue...")
 
@@ -374,21 +425,44 @@ def edit_xray_config():
 
     print(f"📝 Opening {config_path} in nano...")
     print("💡 Ctrl+X to save, Ctrl+O + Enter to confirm")
-    input("Press Enter to open editor...")
+    print("💡 Press Enter to open editor, or Ctrl+C to cancel")
 
-    run_command(['nano', config_path])
+    try:
+        result = subprocess.run(['nano', config_path])
 
-    if questionary.confirm("Validate and restart Xray?").ask():
-        result = run_command(['xray', 'test', '-config', config_path])
         if result.returncode == 0:
-            if restart_service('xray'):
-                print("✅ Config valid, service restarted")
-            else:
-                print("❌ Failed to restart service")
+            print("\n✅ Editor closed")
+
+            if questionary.confirm("Validate and restart Xray?").ask():
+                # Test config
+                test_result = subprocess.run(
+                    ['xray', 'test', '-config', config_path],
+                    capture_output=True,
+                    text=True
+                )
+
+                if test_result.returncode == 0:
+                    if restart_service('xray'):
+                        print("✅ Config valid, service restarted")
+                    else:
+                        print("❌ Failed to restart service")
+                else:
+                    print(f"❌ Config validation failed:")
+                    print(test_result.stdout[:500] if test_result.stdout else "Unknown error")
+
+                    if questionary.confirm("Revert changes from backup?").ask():
+                        if os.path.exists(config_path + '.bak'):
+                            shutil.copy2(config_path + '.bak', config_path)
+                            print("✅ Reverted from backup")
+                        else:
+                            print("⚠️  No backup found - manual revert required")
         else:
-            print(f"❌ Config validation failed:\n{result.stdout}")
-            if questionary.confirm("Revert changes?").ask():
-                print("⚠️  Manual revert required - backup your configs!")
+            print(f"⚠️  Editor exited with code {result.returncode}")
+
+    except KeyboardInterrupt:
+        print("\n⚠️  Editor cancelled")
+    except Exception as e:
+        print(f"❌ Error: {e}")
 
     input("\nPress Enter to continue...")
 
@@ -679,21 +753,53 @@ def backup_menu():
 # LUMON SETTINGS
 # ============================================
 def edit_lumon_config():
-    """Edit main LUMON config"""
+    """Edit main LUMON config with nano"""
     print_header("Edit LUMON Config")
 
-    print(f"📝 Opening {CONFIG_PATH} in nano...")
-    input("Press Enter to open editor...")
+    config_path = "/etc/lumon/lumon_config.json"
+    if not os.path.exists(config_path):
+        print("❌ Config not found")
+        input("Press Enter to continue...")
+        return
 
-    run_command(['nano', str(CONFIG_PATH)])
+    print(f"📝 Opening {config_path} in nano...")
+    print("💡 Ctrl+X to save, Ctrl+O + Enter to confirm")
+    print("💡 Press Enter to open editor, or Ctrl+C to cancel")
 
-    # Reload config
-    config.load()
+    try:
+        # Запускаем nano БЕЗ capture_output - важно для интерактивных программ!
+        result = subprocess.run(['nano', config_path])
 
-    if questionary.confirm("Restart services to apply changes?").ask():
-        restart_service('lumon-api')
-        restart_service('nginx')
-        print("✅ Services restarted")
+        if result.returncode == 0:
+            print("\n✅ Editor closed")
+
+            # Reload config to apply changes
+            config.load()
+            print("✅ Configuration reloaded")
+
+            if questionary.confirm("Restart services to apply changes?").ask():
+                print("🔄 Restarting services...")
+
+                # Restart affected services
+                services_restarted = []
+
+                if restart_service('lumon-api'):
+                    services_restarted.append('lumon-api')
+
+                if restart_service('nginx'):
+                    services_restarted.append('nginx')
+
+                if services_restarted:
+                    print(f"✅ Restarted: {', '.join(services_restarted)}")
+                else:
+                    print("⚠️  Some services failed to restart")
+        else:
+            print(f"⚠️  Editor exited with code {result.returncode}")
+
+    except KeyboardInterrupt:
+        print("\n⚠️  Editor cancelled by user")
+    except Exception as e:
+        print(f"❌ Error editing config: {e}")
 
     input("\nPress Enter to continue...")
 
