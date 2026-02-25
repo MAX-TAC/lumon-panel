@@ -421,7 +421,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 pip install --upgrade pip
-pip install fastapi uvicorn sqlalchemy psycopg2-binary typer questionary cryptography python-multipart jinja2
+pip install fastapi uvicorn sqlalchemy psycopg2-binary typer questionary cryptography python-multipart jinja2 requests
 
 # Create CLI entry point
 cat > /usr/local/bin/lumon-cli << 'EOFCLI'
