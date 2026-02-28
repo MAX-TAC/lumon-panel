@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUMON Industries - Employee Portal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #f5f7fa;
+            color: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Background with large numbers (Severance style) */
+        .numbers-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .number-row {
+            position: absolute;
+            width: 100%;
+            font-family: 'Courier New', monospace;
+            font-size: 32px;
+            font-weight: 300;
+            color: rgba(74, 88, 102, 0.25);
+            white-space: nowrap;
+            letter-spacing: 12px;
+            opacity: 0;
+            animation: flicker 3s ease-in-out infinite;
+            animation-fill-mode: forwards;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0; }
+            10% { opacity: 0.20; }
+            50% { opacity: 0.400; }
+            75%, 100% { opacity: 0.25; }
+        }
+
+        /* Language switch - FIXED position (top-right corner) */
+        .lang-switch-container {
+            position: fixed;
+            top: 25px;
+            right: 40px;
+            z-index: 100;
+        }
+
+        .lang-switch {
+            background: white;
+            border: 1px solid #d0d0d0;
+            color: #333;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .lang-switch:hover {
+            background: #f0f0f0;
+            border-color: #999;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+
+        /* Header */
+        .header {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 25px 60px;
+        }
+
+        /* Main content */
+        .main {
+            position: relative;
+            z-index: 10;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        /* Login card */
+        .login-container {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 50px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            max-width: 450px;
+            width: 100%;
+            border: 1px solid rgba(232, 232, 232, 0.6);
+            animation: slideUp 0.8s ease-out;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #1a1a2e 0%, #4a90a4 100%);
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Logo inside container */
+        .logo-wrapper {
+            text-align: center;
+            margin-bottom: 20px;
+            animation: fadeIn 0.8s ease-out 0.2s both;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .logo {
+            width: 300px;
+            height: auto;
+            display: inline-block;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 35px;
+        }
+
+        .login-header h1 {
+            font-size: 1.6em;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 8px;
+        }
+
+        .login-header p {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .error-message {
+            background: #fff5f5;
+            border: 1px solid #feb2b2;
+            border-left: 4px solid #fc8181;
+            color: #c53030;
+            padding: 14px;
+            border-radius: 6px;
+            margin-bottom: 25px;
+            display: none;
+            font-size: 0.9em;
+            animation: shake 0.5s;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-8px); }
+            75% { transform: translateX(8px); }
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid #d0d0d0;
+            border-radius: 8px;
+            background: #fafbfc;
+            color: #1a1a2e;
+            font-size: 1em;
+            transition: all 0.2s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4a90a4;
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.1);
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: #1a1a2e;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .login-btn:hover {
+            background: #2d2d44;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Footer */
+        .footer {
+            position: relative;
+            z-index: 10;
+            padding: 40px 30px;
+            text-align: center;
+            color: #888;
+            font-size: 0.85em;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 20px;
+        }
+
+        .footer-link {
+            color: #666;
+            text-decoration: none;
+            font-size: 0.9em;
+            transition: color 0.2s;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .footer-link:hover {
+            color: #1a1a2e;
+            text-decoration: underline;
+        }
+
+        .footer-text {
+            margin-bottom: 8px;
+        }
+
+        .footer-security {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-size: 0.9em;
+            color: #2d5a2d;
+            font-weight: 500;
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.3s;
+        }
+
+        .modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #ffffff;
+            padding: 40px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            animation: slideUp 0.3s;
+        }
+
+        .modal-header {
+            font-size: 1.4em;
+            margin-bottom: 20px;
+            color: #1a1a2e;
+            font-weight: 600;
+        }
+
+        .modal-body {
+            color: #444;
+            line-height: 1.8;
+            margin-bottom: 30px;
+            white-space: pre-line;
+        }
+
+        .modal-close {
+            background: #1a1a2e;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .modal-close:hover {
+            background: #2d2d44;
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .lang-switch-container {
+                top: 15px;
+                right: 15px;
+            }
+
+            .login-container {
+                padding: 35px 25px;
+            }
+
+            .logo {
+                width: 220px;
+            }
+
+            .footer-links {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .number-row {
+                font-size: 20px;
+                letter-spacing: 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Background numbers -->
+    <div class="numbers-bg" id="numbersBg"></div>
+
+    <!-- Language switch - FIXED position -->
+    <div class="lang-switch-container">
+        <button class="lang-switch" onclick="toggleLanguage()" id="langBtn">EN</button>
+    </div>
+
+    <header class="header">
+        <!-- Empty header now -->
+    </header>
+
+    <main class="main">
+        <div class="login-container">
+            <!-- Logo inside container -->
+            <div class="logo-wrapper">
+                <img src="/assets/lumon-logo.png" alt="LUMON Industries" class="logo" onerror="this.style.display='none'">
+            </div>
+
+            <div class="login-header">
+                <h1 data-i18n="title">Employee Portal</h1>
+                <p data-i18n="subtitle">Secure access to LUMON Industries systems</p>
+            </div>
+
+            <div class="error-message" id="errorMsg">
+                <strong data-i18n="errorTitle">Authentication Failed</strong><br>
+                <span data-i18n="error">Invalid credentials. Please try again.</span>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label data-i18n="employeeId" for="employeeId">Employee ID</label>
+                    <input type="text" id="employeeId" name="employeeId" required autocomplete="off" autofocus>
+                </div>
+
+                <div class="form-group">
+                    <label data-i18n="password" for="password">Password</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+
+                <button type="submit" class="login-btn" data-i18n="signIn">Sign In</button>
+            </form>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="footer-links">
+            <a class="footer-link" onclick="openModal('privacy')" data-i18n="privacy">Privacy Policy</a>
+            <a class="footer-link" onclick="openModal('terms')" data-i18n="terms">Terms of Use</a>
+            <a class="footer-link" onclick="openModal('support')" data-i18n="support">IT Support</a>
+        </div>
+        <div class="footer-text" data-i18n="copyright">© 2024 LUMON Industries. All rights reserved.</div>
+        <div class="footer-security">
+            <span data-i18n="security">Protected by LUMON Security Division</span>
+        </div>
+    </footer>
+
+    <!-- Modal -->
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h3 class="modal-header" id="modalTitle">Title</h3>
+            <div class="modal-body" id="modalBody">Content</div>
+            <button class="modal-close" onclick="closeModal()" data-i18n="close">Close</button>
+        </div>
+    </div>
+
+    <script>
+        // Generate large numbers with FICKER animation only
+        function generateNumbers() {
+            const container = document.getElementById('numbersBg');
+            const rowCount = 14;
+
+            for (let i = 0; i < rowCount; i++) {
+                const row = document.createElement('div');
+                row.className = 'number-row';
+                row.style.top = (i * 7.5) + '%';
+                row.style.animationDelay = (i * 0.2) + 's';
+
+                let numbers = '';
+                for (let j = 0; j < 80; j++) {
+                    numbers += Math.floor(Math.random() * 10) + ' ';
+                }
+
+                row.textContent = numbers;
+                container.appendChild(row);
+            }
+        }
+
+        // Translations
+        const translations = {
+            en: {
+                title: 'Employee Portal',
+                subtitle: 'Secure access to LUMON Industries systems',
+                errorTitle: 'Authentication Failed',
+                error: 'Invalid credentials. Please try again.',
+                employeeId: 'Employee ID',
+                password: 'Password',
+                signIn: 'Sign In',
+                privacy: 'Privacy Policy',
+                terms: 'Terms of Use',
+                support: 'IT Support',
+                copyright: '© 2024 LUMON Industries. All rights reserved.',
+                security: 'Protected by LUMON Security Division',
+                close: 'Close',
+                modalPrivacyTitle: 'Privacy Policy',
+                modalPrivacyBody: 'At LUMON Industries, we take your privacy seriously. All employee data is encrypted and stored securely in accordance with industry standards.\n\nFor questions, contact:\nsecurity@lumon.ind',
+                modalTermsTitle: 'Terms of Use',
+                modalTermsBody: 'By accessing this portal, you agree to comply with all LUMON Industries IT policies and procedures.\n\nUnauthorized access or misuse of company resources is strictly prohibited.',
+                modalSupportTitle: 'IT Support',
+                modalSupportBody: 'IT Support Department\n\n📧 Email: itsupport@lumon.ind\n📞 Phone: ext. 4357 (HELP)\n🕐 Hours: Mon-Fri, 8:00 AM - 6:00 PM\n\nFor emergencies: ext. 911'
+            },
+            ru: {
+                title: 'Портал сотрудника',
+                subtitle: 'Безопасный доступ к системам LUMON Industries',
+                errorTitle: 'Ошибка аутентификации',
+                error: 'Неверные учетные данные. Пожалуйста, попробуйте снова.',
+                employeeId: 'ID сотрудника',
+                password: 'Пароль',
+                signIn: 'Войти',
+                privacy: 'Политика конфиденциальности',
+                terms: 'Условия использования',
+                support: 'IT поддержка',
+                copyright: '© 2024 LUMON Industries. Все права защищены.',
+                security: 'Защищено отделом безопасности LUMON',
+                close: 'Закрыть',
+                modalPrivacyTitle: 'Политика конфиденциальности',
+                modalPrivacyBody: 'В LUMON Industries мы серьезно относимся к вашей конфиденциальности. Все данные сотрудников шифруются и хранятся безопасно в соответствии с отраслевыми стандартами.\n\nПо вопросам:\nsecurity@lumon.ind',
+                modalTermsTitle: 'Условия использования',
+                modalTermsBody: 'Получая доступ к этому порталу, вы соглашаетесь соблюдать все IT-политики и процедуры LUMON Industries.\n\nНесанкционированный доступ или неправильное использование корпоративных ресурсов строго запрещено.',
+                modalSupportTitle: 'IT поддержка',
+                modalSupportBody: 'Отдел IT поддержки\n\n📧 Email: itsupport@lumon.ind\n📞 Телефон: доб. 4357 (HELP)\n🕐 Часы: Пн-Пт, 8:00 - 18:00\n\nПо срочным вопросам: доб. 911'
+            }
+        };
+
+        // State
+        let currentLang = localStorage.getItem('lumon_lang') || (navigator.language.startsWith('ru') ? 'ru' : 'en');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            generateNumbers();
+            applyLanguage();
+        });
+
+        function applyLanguage() {
+            document.documentElement.lang = currentLang;
+            updateTexts();
+            updateLangButton();
+        }
+
+        function updateTexts() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[currentLang][key]) {
+                    el.textContent = translations[currentLang][key];
+                }
+            });
+
+            const idInput = document.getElementById('employeeId');
+            const passInput = document.getElementById('password');
+
+            if (currentLang === 'ru') {
+                idInput.placeholder = 'Введите ваш ID';
+                passInput.placeholder = 'Введите пароль';
+            } else {
+                idInput.placeholder = 'Enter your ID';
+                passInput.placeholder = 'Enter password';
+            }
+        }
+
+        function updateLangButton() {
+            document.getElementById('langBtn').textContent = currentLang === 'ru' ? 'RU' : 'EN';
+        }
+
+        function toggleLanguage() {
+            currentLang = currentLang === 'en' ? 'ru' : 'en';
+            localStorage.setItem('lumon_lang', currentLang);
+            applyLanguage();
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+
+            const errorMsg = document.getElementById('errorMsg');
+            errorMsg.classList.add('show');
+
+            document.getElementById('password').value = '';
+
+            console.log('[LUMON] Login attempt:', {
+                employeeId: document.getElementById('employeeId').value,
+                timestamp: new Date().toISOString()
+            });
+
+            setTimeout(() => {
+                errorMsg.classList.remove('show');
+            }, 4000);
+        }
+
+        function openModal(type) {
+            const modal = document.getElementById('modal');
+            const title = document.getElementById('modalTitle');
+            const body = document.getElementById('modalBody');
+
+            const titleKey = `modal${type.charAt(0).toUpperCase() + type.slice(1)}Title`;
+            const bodyKey = `modal${type.charAt(0).toUpperCase() + type.slice(1)}Body`;
+
+            title.textContent = translations[currentLang][titleKey];
+            body.textContent = translations[currentLang][bodyKey];
+
+            modal.classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('show');
+        }
+
+        document.getElementById('modal').addEventListener('click', (e) => {
+            if (e.target.id === 'modal') closeModal();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+    </script>
+</body>
+</html>
