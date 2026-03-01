@@ -198,8 +198,7 @@ def create_user():
                     if not any(c.get('id') == user_uuid for c in clients):
                         clients.append({
                             'id': user_uuid,
-                            'email': username,
-                            'flow': "xtls-rprx-vision"
+                            'email': username
                         })
                         print(f"   ✅ Added to VLESS clients: {username}")
                         config_updated = True
