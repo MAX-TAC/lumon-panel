@@ -96,12 +96,23 @@ def list_users():
                 if user:
                     sub_url = f"https://{config.subscription_domain}{config.subscription_path_template.format(uuid=user.uuid, token=user.sub_token)}"
 
-                    print(f"\n📋 Subscription URL for {user.username}:")
+                    # sub_url = f"https://{sub_domain}/sub/{user_uuid}/{sub_token}"
+    
+                    # ============================================
+                    # SHOW CREDENTIALS WITH FULL SUBSCRIPTION LINK
+                    # ============================================
+                    print(f"\n{'='*60}")
+                    print(f"✅ User '{username}' created successfully!")
+                    print(f"{'='*60}")
+                    print(f"📋 User Details:")
+                    print(f"   • Username:     {username}")
+                    print(f"\n🔗 Full Subscription URL:")
                     print(f"   {sub_url}")
-                    print(f"\n📱 Individual configs:")
-                    print(f"   VLESS:     vless://{user.uuid}@{config.subscription_domain}:443?...")
-                    print(f"   Hysteria2: hysteria2://{user.hysteria_auth}@{config.subscription_domain}:443?...")
-
+                    print(f"\n📱 QR Code for Subscription:")
+                    print(f"   https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(sub_url)}")
+                    print(f"\n💡 Open in browser to see all protocols (VLESS, Shadowsocks, Hysteria2)")
+                    print(f"{'='*60}")
+                   
                     if questionary.confirm("📋 Copy URL to clipboard?").ask():
                         # Try to copy to clipboard (works in some terminals)
                         import subprocess
