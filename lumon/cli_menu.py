@@ -275,95 +275,202 @@ def create_user():
 
     input("\nPress Enter to continue...")
 
-def edit_user():
-    """Edit or delete user"""
-    print_header("Edit User")
-
-    db = get_db_session()
-    try:
-        users = db.query(User).all()
-        if not users:
-            print("📭 No users to edit")
-            input("Press Enter to continue...")
-            return
-
-        choices = [f"{u.id} - {u.username}" for u in users] + ["← Back"]
-        choice = questionary.select("Select user:", choices=choices).ask()
-
-        if choice == "← Back":
-            return
-
-        user_id = int(choice.split(" - ")[0])
-        user = db.query(User).filter_by(id=user_id).first()
-
-        action = questionary.select(
-            f"Action for {user.username}:",
-            choices=[
-                "🔄 Reset subscription token",
-                "🔄 Reset Hysteria auth",
-                "✏️  Toggle active status",
-                "🗑️  Delete user",
-                "← Back"
-            ]
-        ).ask()
-
-        if action == "← Back":
-            return
-
-        if action == "🔄 Reset subscription token":
-            import secrets
-            user.sub_token = secrets.token_urlsafe(32)
-            db.commit()
-            print("✅ Token reset")
-
-        elif action == "🔄 Reset Hysteria auth":
-            import secrets
-            user.hysteria_auth = secrets.token_urlsafe(24)
-            db.commit()
-            print("✅ Hysteria auth reset")
-
-        elif action == "✏️  Toggle active status":
-            user.is_active = not user.is_active
-            db.commit()
-            status = "activated" if user.is_active else "deactivated"
-            print(f"✅ User {status}")
-
-        elif action == "🗑️  Delete user":
-            confirm = questionary.confirm(f"Delete user {user.username}?").ask()
-            if confirm:
-                db.delete(user)
-                db.commit()
-                print("✅ User deleted")
-
-    finally:
+def show_user():
+    """Show user details with full subscription info"""
+    print("\n👁️  Show User")
+    print("-" * 40)
+    
+    db = SessionLocal()
+    users = db.query(User).filter(User.is_active == True).all()
+    
+    if not users:
+        print("❌ No active users found")
         db.close()
+        return
+    
+    # Show user list
+    print("\nSelect user to show:")
+    for i, user in enumerate(users, 1):
+        print(f"   {i}. {user.username}")
+    
+    try:
+        choice = int(input("\nEnter number: ").strip())
+        if choice < 1 or choice > len(users):
+            print("❌ Invalid selection")
+            db.close()
+            return
+        user = users[choice - 1]
+    except ValueError:
+        print("❌ Invalid input")
+        db.close()
+        return
+    
+    # Get subscription domain
+    try:
+        from lumon.config import config as lumon_config
+        sub_domain = lumon_config.subscription_domain
+    except Exception:
+        sub_domain = "api.podorozhnik.dlya.ru.net"
+    
+    # Build subscription URL
+    sub_url = f"https://{sub_domain}/sub/{user.uuid}/{user.sub_token}"
+    
+    # Show user details (same format as create_user)
+    print(f"\n{'='*60}")
+    print(f"✅ User '{user.username}' details:")
+    print(f"{'='*60}")
+    print(f"📋 User Details:")
+    print(f"   • Username:     {user.username}")
+    print(f"   • UUID:         {user.uuid}")
+    print(f"   • Sub Token:    {user.sub_token}")
+    print(f"   • SS User Pass: {user.ss_user_pass[:20] + '...' if user.ss_user_pass else 'N/A'}")
+    print(f"\n🔗 Full Subscription URL:")
+    print(f"   {sub_url}")
+    print(f"\n📱 QR Code for Subscription:")
+    print(f"   https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(sub_url)}")
+    print(f"\n💡 Open in browser to see all protocols (VLESS, Shadowsocks, Hysteria2)")
+    print(f"{'='*60}")
+    
+    db.close()
 
     input("\nPress Enter to continue...")
 
+def delete_user():
+    """Delete user from DB and Xray config"""
+    print("\n🗑️  Delete User")
+    print("-" * 40)
+    
+    db = SessionLocal()
+    users = db.query(User).filter(User.is_active == True).all()
+    
+    if not users:
+        print("❌ No active users found")
+        db.close()
+        return
+    
+    # Show user list
+    print("\nSelect user to delete:")
+    for i, user in enumerate(users, 1):
+        print(f"   {i}. {user.username}")
+    
+    try:
+        choice = int(input("\nEnter number: ").strip())
+        if choice < 1 or choice > len(users):
+            print("❌ Invalid selection")
+            db.close()
+            return
+        user = users[choice - 1]
+    except ValueError:
+        print("❌ Invalid input")
+        db.close()
+        return
+    
+    # Confirm deletion
+    confirm = input(f"\n⚠️  Delete user '{user.username}'? (yes/no): ").strip().lower()
+    if confirm != 'yes':
+        print("❌ Deletion cancelled")
+        db.close()
+        return
+    
+    username = user.username
+    user_uuid = user.uuid
+    
+    # ============================================
+    # REMOVE USER FROM XRAY CONFIG
+    # ============================================
+    config_path = Path("/etc/xray/config.json")
+    
+    if config_path.exists():
+        try:
+            # Load config
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            config_updated = False
+            
+            # === Remove from VLESS XHTTP REALITY inbound ===
+            for inbound in config.get('inbounds', []):
+                if inbound.get('tag') == 'VLESS XHTTP REALITY':
+                    clients = inbound.setdefault('settings', {}).setdefault('clients', [])
+                    original_len = len(clients)
+                    # Filter out user by UUID
+                    inbound['settings']['clients'] = [c for c in clients if c.get('id') != user_uuid]
+                    if len(inbound['settings']['clients']) < original_len:
+                        print(f"   ✅ Removed from VLESS clients: {username}")
+                        config_updated = True
+                    break
+            
+            # === Remove from SHADOWSOCKS inbound ===
+            for inbound in config.get('inbounds', []):
+                if inbound.get('tag') == 'SHADOWSOCKS':
+                    clients = inbound.setdefault('settings', {}).setdefault('clients', [])
+                    original_len = len(clients)
+                    # Filter out user by email
+                    inbound['settings']['clients'] = [c for c in clients if c.get('email') != username]
+                    if len(inbound['settings']['clients']) < original_len:
+                        print(f"   ✅ Removed from Shadowsocks clients: {username}")
+                        config_updated = True
+                    break
+            
+            # Save config if changed
+            if config_updated:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2)
+                
+                # Restart Xray to apply changes
+                try:
+                    subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
+                    print("   ✅ Xray restarted with updated config")
+                except subprocess.CalledProcessError as e:
+                    print(f"   ⚠️  Could not restart Xray: {e}")
+            else:
+                print("   ⚠️  User not found in config (DB only)")
+                
+        except json.JSONDecodeError as e:
+            print(f"   ❌ Config JSON error: {e}")
+        except Exception as e:
+            print(f"   ⚠️  Could not update Xray config: {e}")
+    else:
+        print(f"   ⚠️  Config file not found: {config_path}")
+    
+    # ============================================
+    # DELETE USER FROM DATABASE
+    # ============================================
+    db.delete(user)
+    db.commit()
+    
+    print(f"\n✅ User '{username}' deleted successfully!")
+    print(f"   • Removed from database")
+    print(f"   • Removed from Xray config (if present)")
+    
+    db.close()
+
+input("\nPress Enter to continue...")
+
 def user_menu():
-    """User management submenu"""
+    """User management submenu - Create, Show, Delete only"""
     while True:
         print_header("User Management")
 
         choice = questionary.select(
             "Select option:",
             choices=[
-                "📋 List users",
                 "➕ Create user",
-                "✏️  Edit/Delete user",
+                "👁️  Show user",
+                "🗑️  Delete user",
                 "← Back"
             ]
         ).ask()
 
-        if choice == "📋 List users":
-            list_users()
-        elif choice == "➕ Create user":
+        if choice == "➕ Create user":
             create_user()
-        elif choice == "✏️  Edit/Delete user":
-            edit_user()
+        elif choice == "👁️  Show user":
+            show_user()
+        elif choice == "🗑️  Delete user":
+            delete_user()
         elif choice == "← Back":
             break
-
+            
 # ============================================
 # HYSTERIA2 MANAGEMENT
 # ============================================
