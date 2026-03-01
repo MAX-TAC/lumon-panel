@@ -19,6 +19,7 @@ class User(Base):
     uuid = Column(String(36), nullable=False, unique=True)  # Xray/VLESS UUID
     hysteria_auth = Column(String(100), nullable=False)      # Hysteria2 auth
     sub_token = Column(String(64), unique=True, nullable=False, index=True)
+    ss_user_pass = Column(String(255), nullable=True)        # Shadowsocks 2022 user-specific password
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -66,6 +67,7 @@ class Event(Base):
 
     def __repr__(self):
         return f"<Event {self.severity}:{self.event_type}>"
+
 
 class Backup(Base):
     """Backup records tracking"""
