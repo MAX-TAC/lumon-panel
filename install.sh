@@ -144,7 +144,7 @@ pb_key=$(echo "$xray_keys" | awk -F': ' '/Password/ {print $2}' | tr -d '[:space
 # Generate shortId with openssl
 s_id=$(openssl rand -hex 8)
 
-# Generate Shadowsocks password (2022-blake3-aes-256-gcm key)
+# Generate Shadowsocks password (2022-blake3-aes-128-gcm key)
 SS_pass=$(openssl rand -base64 16)
 
 # Save keys to .keys file for subscription.py
