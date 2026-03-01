@@ -7,6 +7,7 @@ Manage users, cores, backups, and monitoring from terminal
 import os
 import sys
 import json
+import uuid
 import subprocess
 import shutil
 from datetime import datetime, timedelta
