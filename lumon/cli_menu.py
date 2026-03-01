@@ -111,8 +111,6 @@ def list_users():
                     print(f"   • Username:     {username}")
                     print(f"\n🔗 Full Subscription URL:")
                     print(f"   {sub_url}")
-                    print(f"\n📱 QR Code for Subscription:")
-                    print(f"   https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(sub_url)}")
                     print(f"\n💡 Open in browser to see all protocols (VLESS, Shadowsocks, Hysteria2)")
                     print(f"{'='*60}")
                    
@@ -269,8 +267,6 @@ def create_user():
     print(f"   • SS User Pass: {ss_user_pass[:20]}...")
     print(f"\n🔗 Full Subscription URL:")
     print(f"   {sub_url}")
-    print(f"\n📱 QR Code for Subscription:")
-    print(f"   https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(sub_url)}")
     print(f"\n💡 Open in browser to see all protocols (VLESS, Shadowsocks, Hysteria2)")
     print(f"{'='*60}")
     
