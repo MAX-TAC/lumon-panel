@@ -216,7 +216,7 @@ class Shadowsocks2022Generator:
         except Exception:
             ip = 'localhost'
 
-        method = client.get('method', '2022-blake3-aes-256-gcm')
+        method = client.get('method', '2022-blake3-aes-128-gcm')
         server_pass = client.get('server_password', '')
         user_pass = client.get('password', '')
         port = client.get('port', 443)
