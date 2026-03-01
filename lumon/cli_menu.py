@@ -159,10 +159,9 @@ def create_user():
         capture_output=True, text=True, check=True
     ).stdout.strip()
     ss_user_pass = result.rstrip('=')
-    except Exception:
-        # Fallback if openssl fails
-        random_bytes = secrets.token_bytes(32)
-        ss_user_pass = base64.b64encode(random_bytes).decode().rstrip('=')
+except Exception:
+    random_bytes = secrets.token_bytes(32)
+    ss_user_pass = base64.b64encode(random_bytes).decode().rstrip('=')
     
     # Create user in database
     new_user = User(
