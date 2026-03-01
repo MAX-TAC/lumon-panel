@@ -6,6 +6,7 @@ PostgreSQL tables definition using SQLAlchemy
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, BigInteger, JSON, ForeignKey
 from sqlalchemy.orm import relationship, declarative_base
 from sqlalchemy.sql import func
+from datetime import datetime, timezone
 
 Base = declarative_base()
 
