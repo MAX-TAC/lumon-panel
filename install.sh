@@ -145,7 +145,7 @@ pb_key=$(echo "$xray_keys" | awk -F': ' '/Password/ {print $2}' | tr -d '[:space
 s_id=$(openssl rand -hex 8)
 
 # Generate Shadowsocks password (2022-blake3-aes-256-gcm key)
-SS_pass=$(openssl rand -base64 32 | tr -d '\n')
+SS_pass=$(openssl rand -base64 16)
 
 # Save keys to .keys file for subscription.py
 cat > /etc/xray/.keys << EOF
@@ -298,7 +298,7 @@ cat > /etc/xray/config.json << EOF
       "port": $SS_port,
       "protocol": "shadowsocks",
       "settings": {
-        "method": "2022-blake3-aes-256-gcm",
+        "method": "2022-blake3-aes-128-gcm",
         "password": "$SS_pass",
         "network": "tcp,udp",
         "clients": []
