@@ -111,7 +111,12 @@ log_success "Logging configured at /var/log/lumon/"
 # STEP 5: Install Xray Core
 # ============================================
 log_info "☢️ Step 5/9: Installing Xray Core..."
+
+# Create directories
 mkdir -p /etc/xray
+mkdir -p /var/log/lumon
+touch /var/log/lumon/xray.log
+chmod 640 /var/log/lumon/xray.log
 
 # Get latest version
 XRAY_VERSION=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name | sed 's/v//')
@@ -123,21 +128,213 @@ unzip -q -o /tmp/xray.zip -d /usr/local/bin/
 chmod +x /usr/local/bin/xray
 rm /tmp/xray.zip
 
-# Create config
-cat > /etc/xray/config.json << 'EOF'
+# ============================================
+# Xray Configuration Setup - AUTO KEY GENERATION
+# ============================================
+log_info "🔧 Configuring Xray..."
+
+# Generate Reality keys automatically with xray x25519
+log_info "🔑 Generating Reality keys..."
+xray_keys=$(xray x25519)
+
+# Parse xray x25519 output (Password = public key for Reality)
+pr_key=$(echo "$xray_keys" | awk -F': ' '/PrivateKey/ {print $2}' | tr -d '[:space:]')
+pb_key=$(echo "$xray_keys" | awk -F': ' '/Password/ {print $2}' | tr -d '[:space:]')
+
+# Generate shortId with openssl
+s_id=$(openssl rand -hex 8)
+
+# Generate Shadowsocks password (2022-blake3-aes-256-gcm key)
+SS_pass=$(openssl rand -base64 32 | tr -d '\n')
+
+# Save keys to .keys file for subscription.py
+cat > /etc/xray/.keys << EOF
+PrivateKey: $pr_key
+Password: $pb_key
+shortsid: $s_id
+SS_pass: $SS_pass
+EOF
+chmod 600 /etc/xray/.keys
+
+log_success "Keys generated and saved to /etc/xray/.keys"
+
+# Request SNI and path from user
+echo ""
+log_info "🌐 Reality Settings:"
+echo "-------------------"
+
+# SNI domain
+while true; do
+    read -p "Enter SNI domain for Reality masking (e.g., github): " SNI
+    if [[ -n "$SNI" && ! "$SNI" =~ [[:space:]] ]]; then
+        break
+    fi
+    log_error "Invalid domain. Try again."
+done
+
+# Path for xhttp
+while true; do
+    read -p "Enter path for XHTTP (e.g., / or /api): " path
+    if [[ "$path" =~ ^/ ]]; then
+        break
+    fi
+    log_error "Path must start with /. Try again."
+done
+
+# Request Shadowsocks port with recommendations
+echo ""
+log_info "🔐 Shadowsocks Settings:"
+echo "-------------------"
+log_info "Recommended ports: 8443, 2083, 2087, 2096, 8880 (avoid 443, 80, 22, 53)"
+
+while true; do
+    read -p "Enter port for Shadowsocks (e.g., 8443): " SS_port
+    if [[ "$SS_port" =~ ^[0-9]+$ ]] && (( SS_port >= 1024 && SS_port <= 65535 )); then
+        if ! ss -tlnp | grep -q ":${SS_port} "; then
+            break
+        else
+            log_warning "Port $SS_port is already in use. Try another."
+        fi
+    else
+        log_error "Port must be a number between 1024-65535. Try again."
+    fi
+done
+
+log_success "Shadowsocks port: $SS_port"
+
+# Create Xray config with generated keys and user values
+log_info "📝 Creating /etc/xray/config.json..."
+
+cat > /etc/xray/config.json << EOF
 {
-    "inbounds": [],
-    "outbounds": [{
-        "protocol": "freedom",
-        "tag": "direct"
-    }],
-    "log": {
-        "access": "/var/log/lumon/xray.log",
-        "error": "/var/log/lumon/xray.log",
-        "loglevel": "warning"
+  "log": {
+    "access": "/var/log/lumon/xray.log",
+    "error": "/var/log/lumon/xray.log",
+    "loglevel": "warning"
+  },
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      {
+        "outboundTag": "direct",
+        "domain": [
+          "full:cp.cloudflare.com",
+          "domain:msftconnecttest.com",
+          "domain:msftncsi.com",
+          "domain:connectivitycheck.gstatic.com",
+          "domain:captive.apple.com",
+          "full:detectportal.firefox.com",
+          "domain:networkcheck.kde.org",
+          "domain:gstatic.com"
+        ],
+        "type": "field"
+      },
+      {
+        "ip": ["geoip:private"],
+        "outboundTag": "block",
+        "type": "field"
+      },
+      {
+        "protocol": ["bittorrent"],
+        "type": "field",
+        "outboundTag": "block"
+      },
+      {
+        "domain": ["geosite:category-ads-all"],
+        "type": "field",
+        "outboundTag": "block"
+      }
+    ]
+  },
+  "dns": {
+    "servers": [
+      "https://8.8.8.8/dns-query",
+      "https://dns.cloudflare.com/dns-query",
+      "https://dns.quad9.net/dns-query"
+    ],
+    "queryStrategy": "UseIPv4"
+  },
+  "inbounds": [
+    {
+      "tag": "VLESS XHTTP REALITY",
+      "listen": "0.0.0.0",
+      "port": 4443,
+      "protocol": "vless",
+      "settings": {
+        "clients": [],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "xhttp",
+        "xhttpSettings": {
+          "path": "$path"
+        },
+        "security": "reality",
+        "realitySettings": {
+          "show": false,
+          "target": "$SNI:443",
+          "serverNames": [
+            "$SNI",
+            "www.$SNI"
+          ],
+          "privateKey": "$pr_key",
+          "publicKey": "$pb_key",
+          "minClientVer": "",
+          "maxClientVer": "",
+          "maxTimeDiff": 0,
+          "shortIds": [
+            "$s_id"
+          ]
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"]
+      }
+    },
+    {
+      "tag": "SHADOWSOCKS",
+      "listen": "0.0.0.0",
+      "port": $SS_port,
+      "protocol": "shadowsocks",
+      "settings": {
+        "method": "2022-blake3-aes-256-gcm",
+        "password": "$SS_pass",
+        "network": "tcp,udp",
+        "clients": []
+      }
     }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block"
+    }
+  ],
+  "policy": {
+    "levels": {
+      "0": {
+        "handshake": 3,
+        "connIdle": 180
+      }
+    }
+  }
 }
 EOF
+
+# Set correct permissions
+chmod 644 /etc/xray/config.json
+
+# Validate config (optional)
+if xray test -config /etc/xray/config.json &>/dev/null; then
+    log_success "Config validated"
+else
+    log_warning "Config validation warning (may still work)"
+fi
 
 # Create systemd service
 cat > /etc/systemd/system/xray.service << 'EOF'
@@ -156,11 +353,27 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 EOF
 
+# Restart Xray to apply config
 systemctl daemon-reload
 systemctl enable xray
-systemctl start xray
+systemctl restart xray
+sleep 2
 
-log_success "Xray Core v${XRAY_VERSION} installed"
+if systemctl is-active --quiet xray; then
+    log_success "Xray Core v${XRAY_VERSION} installed and running"
+else
+    log_error "Xray failed to start!"
+    log_info "Check logs: journalctl -u xray -n 20"
+fi
+
+# Show summary (NO link generation - links are generated by subscription.py per user)
+echo ""
+log_info "✅ Configuration complete:"
+echo "  • Reality keys saved to /etc/xray/.keys"
+echo "  • Shadowsocks password saved to /etc/xray/.keys"
+echo "  • VLESS port: 4443"
+echo "  • Shadowsocks port: $SS_port"
+echo ""
 
 # ============================================
 # STEP 6: Install Hysteria2
