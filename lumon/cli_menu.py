@@ -117,71 +117,150 @@ def list_users():
     input("\nPress Enter to continue...")
 
 def create_user():
-    """Create new user with auto-generated credentials"""
-    print_header("Create User")
-
-    username = questionary.text("Enter username (letters/numbers/dots/underscores):").ask()
-
-    if not username or not all(c.isalnum() or c in '._-' for c in username):
-        print("❌ Username can only contain letters, numbers, dots, underscores, or hyphens")
-        input("Press Enter to continue...")
+    """Create new user with auto-generated credentials and add to Xray config"""
+    print("\n👤 Create New User")
+    print("-" * 40)
+    
+    username = input("Enter username (no spaces): ").strip()
+    if not username or ' ' in username:
+        print("❌ Username cannot be empty or contain spaces")
         return
-
-    import uuid
-    import secrets
-
+    
+    # Check if user already exists in DB
+    db = SessionLocal()
+    existing = db.query(User).filter(User.username == username).first()
+    if existing:
+        print(f"❌ User '{username}' already exists")
+        db.close()
+        return
+    
+    # Generate credentials
     user_uuid = str(uuid.uuid4())
     sub_token = secrets.token_urlsafe(32)
-    hysteria_auth = secrets.token_urlsafe(24)
-
-    db = get_db_session()
+    hysteria_auth = secrets.token_urlsafe(16)
+    
+    # Generate Shadowsocks user password (2022 multi-user format)
     try:
-        # Check if exists
-        existing = db.query(User).filter_by(username=username).first()
-        if existing:
-            print("❌ User already exists")
-            input("Press Enter to continue...")
-            return
-
-        # Create user
-        new_user = User(
-            username=username,
-            uuid=user_uuid,
-            hysteria_auth=hysteria_auth,
-            sub_token=sub_token,
-            is_active=True
-        )
-        db.add(new_user)
-        db.commit()
-
-        # Generate subscription link
-        sub_url = f"https://{config.subscription_domain}{config.subscription_path_template.format(uuid=user_uuid, token=sub_token)}"
-
-        print(f"\n✅ User created successfully!")
-        print(f"\n📋 User Details:")
-        print(f"   Username:    {username}")
-        print(f"   UUID:        {user_uuid}")
-        print(f"   Sub Token:   {sub_token}")
-        print(f"   Hysteria Auth: {hysteria_auth}")
-        print(f"\n🔗 Subscription URL:")
-        print(f"   {sub_url}")
-        print(f"\n⚠️  Remember to add inbounds to Xray/Hysteria configs!")
-
-        # Log event
-        event = Event(
-            event_type="user_created",
-            severity="info",
-            message=f"User created: {username}",
-            event_data={"uuid": user_uuid}
-        )
-        db.add(event)
-        db.commit()
-
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Error: {e}")
-    finally:
-        db.close()
+        ss_user_pass = subprocess.run(
+            ['openssl', 'rand', '-base64', '32'],
+            capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except Exception:
+        # Fallback if openssl fails
+        ss_user_pass = secrets.token_urlsafe(32)
+    
+    # Create user in database
+    new_user = User(
+        username=username,
+        uuid=user_uuid,
+        sub_token=sub_token,
+        hysteria_auth=hysteria_auth,
+        ss_user_pass=ss_user_pass,  # Store for Shadowsocks multi-user
+        is_active=True,
+        created_at=datetime.utcnow()
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    # ============================================
+    # ADD USER TO XRAY CONFIG (inline, no separate function)
+    # ============================================
+    config_path = Path("/etc/xray/config.json")
+    
+    if config_path.exists():
+        try:
+            # Load config
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            config_updated = False
+            
+            # === Update VLESS XHTTP REALITY inbound ===
+            for inbound in config.get('inbounds', []):
+                if inbound.get('tag') == 'VLESS XHTTP REALITY':
+                    clients = inbound.setdefault('settings', {}).setdefault('clients', [])
+                    
+                    # Check if user already exists (by UUID)
+                    if not any(c.get('id') == user_uuid for c in clients):
+                        clients.append({
+                            'id': user_uuid,
+                            'email': username
+                        })
+                        print(f"   ✅ Added to VLESS clients: {username}")
+                        config_updated = True
+                    break
+            
+            # === Update SHADOWSOCKS inbound ===
+            for inbound in config.get('inbounds', []):
+                if inbound.get('tag') == 'SHADOWSOCKS':
+                    clients = inbound.setdefault('settings', {}).setdefault('clients', [])
+                    
+                    # Check if user already exists (by email)
+                    if not any(c.get('email') == username for c in clients):
+                        clients.append({
+                            'password': ss_user_pass,
+                            'email': username
+                        })
+                        print(f"   ✅ Added to Shadowsocks clients: {username}")
+                        config_updated = True
+                    break
+            
+            # Save config if changed
+            if config_updated:
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2)
+                
+                # Restart Xray to apply changes
+                try:
+                    subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
+                    print("   ✅ Xray restarted with new config")
+                except subprocess.CalledProcessError as e:
+                    print(f"   ⚠️  Could not restart Xray: {e}")
+            else:
+                print("   ⚠️  User already exists in config (skipped)")
+                
+        except json.JSONDecodeError as e:
+            print(f"   ❌ Config JSON error: {e}")
+        except Exception as e:
+            print(f"   ⚠️  Could not update Xray config: {e}")
+            print("   💡 User created in DB only - add to config manually if needed")
+    else:
+        print(f"   ⚠️  Config file not found: {config_path}")
+        print("   💡 User created in DB only")
+    
+    # ============================================
+    # GET SUBSCRIPTION DOMAIN FROM CONFIG
+    # ============================================
+    try:
+        from lumon.config import config as lumon_config
+        sub_domain = lumon_config.subscription_domain
+    except Exception:
+        sub_domain = "api.podorozhnik.dlya.ru.net"  # Fallback
+    
+    # Build full subscription URL
+    sub_url = f"https://{sub_domain}/sub/{user_uuid}/{sub_token}"
+    
+    # ============================================
+    # SHOW CREDENTIALS WITH FULL SUBSCRIPTION LINK
+    # ============================================
+    print(f"\n{'='*60}")
+    print(f"✅ User '{username}' created successfully!")
+    print(f"{'='*60}")
+    print(f"📋 User Details:")
+    print(f"   • Username:     {username}")
+    print(f"   • UUID:         {user_uuid}")
+    print(f"   • Sub Token:    {sub_token}")
+    print(f"   • SS User Pass: {ss_user_pass[:20]}...")
+    print(f"\n🔗 Full Subscription URL:")
+    print(f"   {sub_url}")
+    print(f"\n📱 QR Code for Subscription:")
+    print(f"   https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={urllib.parse.quote(sub_url)}")
+    print(f"\n💡 Open in browser to see all protocols (VLESS, Shadowsocks, Hysteria2)")
+    print(f"{'='*60}")
+    
+    db.close()
 
     input("\nPress Enter to continue...")
 
