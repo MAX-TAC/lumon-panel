@@ -170,7 +170,7 @@ def create_user():
         hysteria_auth=hysteria_auth,
         ss_user_pass=ss_user_pass,  # Store for Shadowsocks multi-user
         is_active=True,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     
     db.add(new_user)
