@@ -68,13 +68,6 @@ class VlessXhttpGenerator:
         if not self.inbound:
             self.inbound = self.reader.get_inbound_by_protocol("vless")
 
-    def get_client_by_email(self, email: str) -> dict:
-        clients = self.inbound.get('settings', {}).get('clients', [])
-        for client in clients:
-            if client.get('email') == email:
-                return client
-        return {}
-
     def generate_link_for_email(self, email: str, domain: str = None) -> str:
         client = self.get_client_by_email(email)
         if not client:
@@ -82,6 +75,7 @@ class VlessXhttpGenerator:
 
         uuid = client.get('id', '')
         port = self.inbound.get('port', 443)
+        # ВАЖНО: всегда используем IP, игнорируем domain
         ip = self.reader.get_external_ip()
 
         # Reality settings
@@ -95,7 +89,6 @@ class VlessXhttpGenerator:
         xhttp = stream.get('xhttpSettings', {})
         path = xhttp.get('path', '/')
 
-        # Параметры согласно шаблону
         params = {
             'type': 'xhttp',
             'encryption': 'none',
@@ -107,14 +100,13 @@ class VlessXhttpGenerator:
             'fp': 'chrome',
             'sni': sni,
             'sid': s_id,
-            'spx': '%2F'  # закодированный '/'
+            'spx': '%2F'
         }
 
         query = '&'.join([f"{k}={urllib.parse.quote(str(v), safe='')}" for k, v in params.items()])
         remark = urllib.parse.quote("VLESS XHTTP REALITY", safe='')
 
         return f"vless://{uuid}@{ip}:{port}?{query}#{remark}"
-
 
 # ==================== ГЕНЕРАТОР SHADOWSOCKS 2022 (МУЛЬТИПОЛЬЗОВАТЕЛЬСКИЙ) ====================
 
