@@ -41,7 +41,7 @@ class XrayConfigReader:
                 return inbound
         return {}
 
-def get_external_ip(self) -> str:
+    def get_external_ip(self) -> str:
     """Возвращает IPv4-адрес сервера.
     Сначала пытается получить локальный IP через hostname -I,
     затем через сокет (определяет IP маршрута по умолчанию),
