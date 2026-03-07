@@ -12,9 +12,6 @@ from pathlib import Path
 from typing import Optional, Dict, List, Any
 
 # ==================== ЧТЕНИЕ КОНФИГА XRAY ====================
-import re
-import subprocess
-from typing import Optional
 
 class XrayConfigReader:
     def __init__(self, config_path: str = "/etc/xray/config.json"):
@@ -23,32 +20,45 @@ class XrayConfigReader:
         self._cached_ip: Optional[str] = None
         self._load()
 
+    def _load(self):
+        if self.config_path.exists():
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    self.config = json.load(f)
+            except Exception:
+                self.config = {}
+
+    def get_inbound_by_tag(self, tag: str) -> dict:
+        for inbound in self.config.get('inbounds', []):
+            if inbound.get('tag') == tag:
+                return inbound
+        return {}
+
+    def get_inbound_by_protocol(self, protocol: str) -> dict:
+        for inbound in self.config.get('inbounds', []):
+            if inbound.get('protocol') == protocol:
+                return inbound
+        return {}
+
     def get_external_ip(self) -> str:
-        """Возвращает IPv4-адрес сервера.
-        Сначала пытается получить локальный IP через hostname -I,
-        затем, если не удалось, опрашивает внешние сервисы.
-        Результат кешируется после первого успешного получения.
-        """
+        """Возвращает IPv4-адрес сервера (с кешированием)"""
         if self._cached_ip is not None:
             return self._cached_ip
 
         ip = None
-
         # 1. Локальный IPv4 через hostname -I
         try:
             result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
             if result.returncode == 0:
-                # Вывод содержит все IP, разделённые пробелами
                 candidates = result.stdout.strip().split()
                 for addr in candidates:
-                    # Проверяем, что это IPv4 (содержит точку и не содержит двоеточий)
                     if '.' in addr and ':' not in addr:
                         ip = addr
                         break
         except Exception:
             pass
 
-        # 2. Если локальный не найден, пробуем внешние сервисы (IPv4 форсированно)
+        # 2. Если локальный не найден, пробуем внешние сервисы
         if not ip:
             services = [
                 ['curl', '-4', '-s', 'icanhazip.com'],
@@ -60,14 +70,12 @@ class XrayConfigReader:
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
                     if result.returncode == 0:
                         candidate = result.stdout.strip()
-                        # Проверяем, что это валидный IPv4
                         if re.match(r'^\d+\.\d+\.\d+\.\d+$', candidate):
                             ip = candidate
                             break
                 except Exception:
                     continue
 
-        # Кешируем результат (даже если localhost, но лучше не кешировать ошибочный)
         if ip:
             self._cached_ip = ip
         else:
