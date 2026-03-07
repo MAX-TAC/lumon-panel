@@ -4,6 +4,7 @@ For VLESS XHTTP REALITY and Shadowsocks 2022 (multi‑user)
 Reads configuration from /etc/xray/config.json
 """
 
+import re
 import json
 import base64
 import socket
@@ -42,17 +43,12 @@ class XrayConfigReader:
         return {}
 
     def get_external_ip(self) -> str:
-    """Возвращает IPv4-адрес сервера.
-    Сначала пытается получить локальный IP через hostname -I,
-    затем через сокет (определяет IP маршрута по умолчанию),
-    затем опрашивает внешние сервисы.
-    Результат кешируется после первого успешного получения.
-    """
-    if self._cached_ip is not None:
-        return self._cached_ip
+        """Возвращает IPv4-адрес сервера... (docstring)"""
+        if self._cached_ip is not None:
+            return self._cached_ip
 
-    ip = None
-
+        ip = None
+        
     # 1. Локальный IPv4 через hostname -I
     try:
         result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
@@ -104,7 +100,7 @@ class XrayConfigReader:
     else:
         ip = 'localhost'  # крайний случай
 
-    return ip
+        return ip
 
 # ==================== ГЕНЕРАТОР VLESS XHTTP REALITY ====================
 
