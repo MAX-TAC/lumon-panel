@@ -8,53 +8,72 @@ import json
 import base64
 import urllib.parse
 import subprocess
+import re
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List, Any
+from typing import Optional
 
 # ==================== ЧТЕНИЕ КОНФИГА XRAY ====================
 
 class XrayConfigReader:
-    """Read Xray config from /etc/xray/config.json"""
-
     def __init__(self, config_path: str = "/etc/xray/config.json"):
         self.config_path = Path(config_path)
         self.config: dict = {}
+        self._cached_ip: Optional[str] = None
         self._load()
 
-    def _load(self):
-        if self.config_path.exists():
-            try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    self.config = json.load(f)
-            except Exception:
-                self.config = {}
-
-    def get_inbound_by_tag(self, tag: str) -> dict:
-        """Find inbound by its 'tag' field"""
-        for inbound in self.config.get('inbounds', []):
-            if inbound.get('tag') == tag:
-                return inbound
-        return {}
-
-    def get_inbound_by_protocol(self, protocol: str) -> dict:
-        """Find first inbound with given protocol (fallback)"""
-        for inbound in self.config.get('inbounds', []):
-            if inbound.get('protocol') == protocol:
-                return inbound
-        return {}
-
     def get_external_ip(self) -> str:
+        """Возвращает IPv4-адрес сервера.
+        Сначала пытается получить локальный IP через hostname -I,
+        затем, если не удалось, опрашивает внешние сервисы.
+        Результат кешируется после первого успешного получения.
+        """
+        if self._cached_ip is not None:
+            return self._cached_ip
+
+        ip = None
+
+        # 1. Локальный IPv4 через hostname -I
         try:
-            result = subprocess.run(
-                ['curl', '-4', '-s', 'icanhazip.com'],
-                capture_output=True, text=True, timeout=3
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
+            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                # Вывод содержит все IP, разделённые пробелами
+                candidates = result.stdout.strip().split()
+                for addr in candidates:
+                    # Проверяем, что это IPv4 (содержит точку и не содержит двоеточий)
+                    if '.' in addr and ':' not in addr:
+                        ip = addr
+                        break
         except Exception:
             pass
-        return 'localhost'
 
+        # 2. Если локальный не найден, пробуем внешние сервисы (IPv4 форсированно)
+        if not ip:
+            services = [
+                ['curl', '-4', '-s', 'icanhazip.com'],
+                ['curl', '-4', '-s', 'ifconfig.me'],
+                ['curl', '-4', '-s', 'api.ipify.org']
+            ]
+            for cmd in services:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        candidate = result.stdout.strip()
+                        # Проверяем, что это валидный IPv4
+                        if re.match(r'^\d+\.\d+\.\d+\.\d+$', candidate):
+                            ip = candidate
+                            break
+                except Exception:
+                    continue
+
+        # Кешируем результат (даже если localhost, но лучше не кешировать ошибочный)
+        if ip:
+            self._cached_ip = ip
+        else:
+            ip = 'localhost'
+
+        return ip
 
 # ==================== ГЕНЕРАТОР VLESS XHTTP REALITY ====================
 
@@ -68,15 +87,29 @@ class VlessXhttpGenerator:
         if not self.inbound:
             self.inbound = self.reader.get_inbound_by_protocol("vless")
 
+    def get_client_by_email(self, email: str) -> dict:
+        """Ищет клиента по email в текущем inbound."""
+        if not self.inbound:
+            return {}
+        clients = self.inbound.get('settings', {}).get('clients', [])
+        for client in clients:
+            if client.get('email') == email:
+                return client
+        return {}
+
     def generate_link_for_email(self, email: str, domain: str = None) -> str:
+        # Добавляем проверку, что inbound найден
+        if not self.inbound:
+            print("ERROR: VLESS inbound not found in config")  # В реальном коде лучше использовать logging
+            return ""
+
         client = self.get_client_by_email(email)
         if not client:
             return ""
 
         uuid = client.get('id', '')
         port = self.inbound.get('port', 443)
-        # ВАЖНО: всегда используем IP, игнорируем domain
-        ip = self.reader.get_external_ip()
+        ip = self.reader.get_external_ip()  # всегда используем реальный IP
 
         # Reality settings
         stream = self.inbound.get('streamSettings', {})
@@ -108,6 +141,7 @@ class VlessXhttpGenerator:
 
         return f"vless://{uuid}@{ip}:{port}?{query}#{remark}"
 
+
 # ==================== ГЕНЕРАТОР SHADOWSOCKS 2022 (МУЛЬТИПОЛЬЗОВАТЕЛЬСКИЙ) ====================
 
 class Shadowsocks2022Generator:
@@ -119,7 +153,27 @@ class Shadowsocks2022Generator:
         if not self.inbound:
             self.inbound = self.reader.get_inbound_by_protocol("shadowsocks")
 
+    def get_client_by_email(self, email: str) -> Optional[dict]:
+        """Ищет клиента по email и обогащает его данными из inbound."""
+        if not self.inbound:
+            return None
+
+        clients = self.inbound.get('settings', {}).get('clients', [])
+        for client in clients:
+            if client.get('email') == email:
+                # Добавляем к клиенту общие настройки inbound'а
+                client_copy = client.copy()  # чтобы не менять оригинал
+                client_copy['port'] = self.inbound.get('port')
+                client_copy['method'] = self.inbound.get('settings', {}).get('method')
+                client_copy['server_password'] = self.inbound.get('settings', {}).get('password')
+                return client_copy
+        return None
+
     def generate_link_for_email(self, email: str, domain: str = None) -> str:
+        if not self.inbound:
+            print("ERROR: Shadowsocks inbound not found in config")
+            return ""
+
         client = self.get_client_by_email(email)
         if not client:
             return ""
@@ -135,9 +189,9 @@ class Shadowsocks2022Generator:
 
         # Кодируем ТОЛЬКО method:password (без @ip:port)
         user_part = f"{method}:{password_combined}"
-        user_part_b64 = base64.urlsafe_b64encode(user_part.encode()).decode().rstrip('=')  # rstrip('=') убираем только лишний паддинг, но внутри '=' сохраняются
+        # Используем стандартный base64 без url-safe, так как в ссылках могут быть символы, требующие кодирования
+        user_part_b64 = base64.b64encode(user_part.encode()).decode().rstrip('=')
 
-        # Формируем ссылку: ss://base64_part@ip:port?type=tcp#SHADOWSOCKS
         remark = urllib.parse.quote("SHADOWSOCKS", safe='')
         return f"ss://{user_part_b64}@{ip}:{port}?type=tcp#{remark}"
 
