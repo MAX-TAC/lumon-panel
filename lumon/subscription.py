@@ -8,13 +8,13 @@ import json
 import base64
 import urllib.parse
 import subprocess
-import re
-import subprocess
 from pathlib import Path
 from typing import Optional, Dict, List, Any
-from typing import Optional
 
 # ==================== ЧТЕНИЕ КОНФИГА XRAY ====================
+import re
+import subprocess
+from typing import Optional
 
 class XrayConfigReader:
     def __init__(self, config_path: str = "/etc/xray/config.json"):
