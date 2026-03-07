@@ -6,6 +6,7 @@ Reads configuration from /etc/xray/config.json
 
 import json
 import base64
+import socket
 import urllib.parse
 import subprocess
 from pathlib import Path
@@ -40,26 +41,45 @@ class XrayConfigReader:
                 return inbound
         return {}
 
-    def get_external_ip(self) -> str:
-        """Возвращает IPv4-адрес сервера (с кешированием)"""
-        if self._cached_ip is not None:
-            return self._cached_ip
+def get_external_ip(self) -> str:
+    """Возвращает IPv4-адрес сервера.
+    Сначала пытается получить локальный IP через hostname -I,
+    затем через сокет (определяет IP маршрута по умолчанию),
+    затем опрашивает внешние сервисы.
+    Результат кешируется после первого успешного получения.
+    """
+    if self._cached_ip is not None:
+        return self._cached_ip
 
-        ip = None
-        # 1. Локальный IPv4 через hostname -I
+    ip = None
+
+    # 1. Локальный IPv4 через hostname -I
+    try:
+        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
+        if result.returncode == 0:
+            candidates = result.stdout.strip().split()
+            for addr in candidates:
+                if '.' in addr and ':' not in addr:
+                    ip = addr
+                    break
+    except Exception:
+        pass
+
+    # 2. Если не нашли, используем сокетный метод (определяет IP основного интерфейса)
+    if not ip:
         try:
-            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
-            if result.returncode == 0:
-                candidates = result.stdout.strip().split()
-                for addr in candidates:
-                    if '.' in addr and ':' not in addr:
-                        ip = addr
-                        break
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Подключаемся к внешнему DNS, но реального соединения не происходит
+                s.connect(('8.8.8.8', 80))
+                ip = s.getsockname()[0]
         except Exception:
             pass
 
-        # 2. Если локальный не найден, пробуем внешние сервисы
-        if not ip:
+    # 3. Если всё ещё нет, пробуем внешние сервисы (только если есть curl)
+    if not ip:
+        try:
+            # Проверим наличие curl
+            subprocess.run(['curl', '--version'], capture_output=True, timeout=1)
             services = [
                 ['curl', '-4', '-s', 'icanhazip.com'],
                 ['curl', '-4', '-s', 'ifconfig.me'],
@@ -75,13 +95,16 @@ class XrayConfigReader:
                             break
                 except Exception:
                     continue
+        except Exception:
+            pass
 
-        if ip:
-            self._cached_ip = ip
-        else:
-            ip = 'localhost'
+    # Кешируем результат
+    if ip:
+        self._cached_ip = ip
+    else:
+        ip = 'localhost'  # крайний случай
 
-        return ip
+    return ip
 
 # ==================== ГЕНЕРАТОР VLESS XHTTP REALITY ====================
 
