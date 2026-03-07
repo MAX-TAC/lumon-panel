@@ -209,40 +209,26 @@ cat > /etc/xray/config.json << EOF
 {
   "log": {
     "access": "/var/log/lumon/xray.log",
+    "dnsLog": false,
     "error": "/var/log/lumon/xray.log",
     "loglevel": "warning"
   },
   "routing": {
-    "domainStrategy": "IPIfNonMatch",
+    "domainStrategy": "AsIs",
     "rules": [
       {
-        "outboundTag": "direct",
-        "domain": [
-          "full:cp.cloudflare.com",
-          "domain:msftconnecttest.com",
-          "domain:msftncsi.com",
-          "domain:connectivitycheck.gstatic.com",
-          "domain:captive.apple.com",
-          "full:detectportal.firefox.com",
-          "domain:networkcheck.kde.org",
-          "domain:gstatic.com"
-        ],
-        "type": "field"
-      },
-      {
-        "ip": ["geoip:private"],
-        "outboundTag": "block",
-        "type": "field"
-      },
-      {
-        "protocol": ["bittorrent"],
         "type": "field",
-        "outboundTag": "block"
+        "outboundTag": "blocked",
+        "ip": [
+          "geoip:private"
+        ]
       },
       {
-        "domain": ["geosite:category-ads-all"],
         "type": "field",
-        "outboundTag": "block"
+        "outboundTag": "blocked",
+        "protocol": [
+          "bittorrent"
+        ]
       }
     ]
   },
@@ -252,44 +238,62 @@ cat > /etc/xray/config.json << EOF
       "https://dns.cloudflare.com/dns-query",
       "https://dns.quad9.net/dns-query"
     ],
-    "queryStrategy": "UseIPv4"
+    "queryStrategy": "UseIP",
+    "tag": "DNS",
+    "enableParallelQuery": true
   },
   "inbounds": [
     {
       "tag": "VLESS XHTTP REALITY",
       "listen": "0.0.0.0",
-      "port": 4443,
+      "port": 4433,
       "protocol": "vless",
       "settings": {
         "clients": [],
-        "decryption": "none"
+        "decryption": "none",
+        "encryption": "none"
       },
       "streamSettings": {
         "network": "xhttp",
-        "xhttpSettings": {
-          "path": "$path"
-        },
-        "security": "reality",
         "realitySettings": {
-          "show": false,
-          "target": "$SNI:443",
-          "serverNames": [
-            "$SNI",
-            "www.$SNI"
-          ],
+          "maxClientVer": "",
+          "maxTimediff": 0,
+          "minClientVer": "",
+          "mldsa65Seed": "",
           "privateKey": "$pr_key",
           "publicKey": "$pb_key",
-          "minClientVer": "",
-          "maxClientVer": "",
-          "maxTimeDiff": 0,
+          "serverNames": [
+            "www.$SNI",
+            "$SNI"
+          ],
           "shortIds": [
             "$s_id"
-          ]
+          ],
+          "show": false,
+          "target": "$SNI:443",
+          "xver": 0
+        },
+        "security": "reality",
+        "xhttpSettings": {
+          "mode": "stream-one",
+          "noSSEHeader": false,
+          "path": "$path",
+          "scMaxBufferedPosts": 30,
+          "scMaxEachPostBytes": "1000000",
+          "scStreamUpServerSecs": "20-80",
+          "xPaddingBytes": "100-1000",
+          "xPaddingObfsMode": false
         }
       },
       "sniffing": {
         "enabled": true,
-        "destOverride": ["http", "tls", "quic"]
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "metadataOnly": false,
+        "routeOnly": false
       }
     },
     {
@@ -307,20 +311,33 @@ cat > /etc/xray/config.json << EOF
   ],
   "outbounds": [
     {
+      "tag": "direct",
       "protocol": "freedom",
-      "tag": "direct"
+      "settings": {
+        "domainStrategy": "AsIs",
+        "redirect": "",
+        "noises": []
+      }
     },
     {
+      "tag": "blocked",
       "protocol": "blackhole",
-      "tag": "block"
+      "settings": {}
     }
   ],
+  "transport": null,
   "policy": {
     "levels": {
       "0": {
-        "handshake": 3,
-        "connIdle": 180
+        "statsUserDownlink": true,
+        "statsUserUplink": true
       }
+    },
+    "system": {
+      "statsInboundDownlink": false,
+      "statsInboundUplink": false,
+      "statsOutboundDownlink": false,
+      "statsOutboundUplink": false
     }
   }
 }
