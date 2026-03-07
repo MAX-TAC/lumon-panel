@@ -221,11 +221,9 @@ class Shadowsocks2022Generator:
 
         # Кодируем ТОЛЬКО method:password (без @ip:port)
         user_part = f"{method}:{password_combined}"
-        # Используем стандартный base64 без url-safe, так как в ссылках могут быть символы, требующие кодирования
-        user_part_b64 = base64.b64encode(user_part.encode()).decode().rstrip('=')
 
         remark = urllib.parse.quote("SHADOWSOCKS", safe='')
-        return f"ss://{user_part_b64}@{ip}:{port}?type=tcp#{remark}"
+        return f"ss://{user_part}@{ip}:{port}?type=tcp#{remark}"
 
 # ==================== УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ====================
 
@@ -1127,11 +1125,10 @@ def generate_html_page(user, domain: str = "") -> str:
             applyLanguage();
         }}
 
+        // Исправленная функция копирования (без alert)
         function copyText(elementId) {{
             const text = document.getElementById(elementId).textContent;
-            navigator.clipboard.writeText(text).then(() => {{
-                alert(translations[currentLang].copied);
-            }}).catch(() => {{
+            navigator.clipboard.writeText(text).catch(() => {{
                 prompt('Copy manually:', text);
             }});
         }}
