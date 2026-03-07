@@ -279,14 +279,14 @@ def generate_html_page(user, domain: str = "") -> str:
     <title>LUMON - Subscription</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* (ваш CSS остаётся без изменений) */
         * {{
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }}
+
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: #f5f7fa;
             color: #1a1a2e;
             min-height: 100vh;
@@ -295,6 +295,8 @@ def generate_html_page(user, domain: str = "") -> str:
             position: relative;
             overflow-x: hidden;
         }}
+
+        /* Background with large numbers */
         .numbers-bg {{
             position: fixed;
             top: 0;
@@ -305,6 +307,7 @@ def generate_html_page(user, domain: str = "") -> str:
             z-index: 0;
             overflow: hidden;
         }}
+
         .number-row {{
             position: absolute;
             width: 100%;
@@ -316,19 +319,23 @@ def generate_html_page(user, domain: str = "") -> str:
             letter-spacing: 12px;
             opacity: 0;
             animation: flicker 3s ease-in-out infinite;
+            animation-fill-mode: forwards;
         }}
+
         @keyframes flicker {{
             0% {{ opacity: 0; }}
             10% {{ opacity: 0.20; }}
             50% {{ opacity: 0.40; }}
             75%, 100% {{ opacity: 0.25; }}
         }}
+
         .lang-switch-container {{
             position: fixed;
             top: 25px;
             right: 40px;
             z-index: 100;
         }}
+
         .lang-switch {{
             background: white;
             border: 1px solid #d0d0d0;
@@ -338,25 +345,32 @@ def generate_html_page(user, domain: str = "") -> str:
             cursor: pointer;
             font-size: 0.85em;
             font-weight: 600;
+            letter-spacing: 0.5px;
             transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }}
+
         .lang-switch:hover {{
             background: #f0f0f0;
             border-color: #999;
             transform: translateY(-1px);
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
         }}
+
         .header {{
             position: relative;
             z-index: 10;
             padding: 15px 60px;
             text-align: center;
         }}
+
         .header h1 {{
             font-size: 1.8em;
             font-weight: 600;
             color: #1a1a2e;
             letter-spacing: 2px;
         }}
+
         .main {{
             position: relative;
             z-index: 10;
@@ -370,6 +384,7 @@ def generate_html_page(user, domain: str = "") -> str:
             margin: 0 auto;
             width: 100%;
         }}
+
         .config-card {{
             background: rgba(255, 255, 255, 0.95);
             padding: 20px;
@@ -381,6 +396,7 @@ def generate_html_page(user, domain: str = "") -> str:
             position: relative;
             overflow: hidden;
         }}
+
         .config-card::before {{
             content: '';
             position: absolute;
@@ -390,20 +406,24 @@ def generate_html_page(user, domain: str = "") -> str:
             height: 4px;
             background: linear-gradient(90deg, #1a1a2e 0%, #4a90a4 100%);
         }}
+
         @keyframes slideUp {{
             from {{ opacity: 0; transform: translateY(30px); }}
             to {{ opacity: 1; transform: translateY(0); }}
         }}
+
         .card-header {{
             margin-bottom: 15px;
             padding-bottom: 10px;
             border-bottom: 1px solid #e8e8e8;
         }}
+
         .card-title {{
             font-size: 1.1em;
             font-weight: 600;
             color: #1a1a2e;
         }}
+
         .config-box {{
             background: #fafbfc;
             border: 1px solid #d0d0d0;
@@ -416,11 +436,13 @@ def generate_html_page(user, domain: str = "") -> str:
             margin-bottom: 15px;
             line-height: 1.5;
         }}
+
         .button-group {{
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
         }}
+
         .btn {{
             padding: 8px 16px;
             border-radius: 6px;
@@ -433,24 +455,29 @@ def generate_html_page(user, domain: str = "") -> str:
             align-items: center;
             gap: 6px;
         }}
+
         .btn-copy {{
             background: #1a1a2e;
             color: white;
         }}
+
         .btn-copy:hover {{
             background: #2d2d44;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(26, 26, 46, 0.2);
         }}
+
         .btn-qr {{
             background: #4a90a4;
             color: white;
         }}
+
         .btn-qr:hover {{
             background: #3d7a8c;
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(74, 144, 164, 0.3);
         }}
+
         .btn-github {{
             background: #333;
             color: white;
@@ -464,10 +491,12 @@ def generate_html_page(user, domain: str = "") -> str:
             gap: 6px;
             transition: all 0.2s;
         }}
+
         .btn-github:hover {{
             background: #24292e;
             transform: translateY(-1px);
         }}
+
         .btn-appstore {{
             background: #007aff;
             color: white;
@@ -481,10 +510,12 @@ def generate_html_page(user, domain: str = "") -> str:
             gap: 6px;
             transition: all 0.2s;
         }}
+
         .btn-appstore:hover {{
             background: #0056b3;
             transform: translateY(-1px);
         }}
+
         .btn-googleplay {{
             background: #10b981;
             color: white;
@@ -498,10 +529,12 @@ def generate_html_page(user, domain: str = "") -> str:
             gap: 6px;
             transition: all 0.2s;
         }}
+
         .btn-googleplay:hover {{
             background: #059669;
             transform: translateY(-1px);
         }}
+
         .platform-section {{
             background: rgba(255, 255, 255, 0.95);
             padding: 25px;
@@ -513,6 +546,7 @@ def generate_html_page(user, domain: str = "") -> str:
             position: relative;
             overflow: hidden;
         }}
+
         .platform-section::before {{
             content: '';
             position: absolute;
@@ -522,6 +556,7 @@ def generate_html_page(user, domain: str = "") -> str:
             height: 4px;
             background: linear-gradient(90deg, #1a1a2e 0%, #4a90a4 100%);
         }}
+
         .platform-section-title {{
             font-size: 1.2em;
             font-weight: 600;
@@ -530,15 +565,18 @@ def generate_html_page(user, domain: str = "") -> str:
             padding-bottom: 12px;
             border-bottom: 1px solid #e8e8e8;
         }}
+
         .platform-accordion {{
             display: flex;
             flex-direction: column;
             gap: 10px;
         }}
+
         .platform-item {{
             border-radius: 8px;
             overflow: hidden;
         }}
+
         .platform-header {{
             padding: 14px 18px;
             cursor: pointer;
@@ -550,33 +588,68 @@ def generate_html_page(user, domain: str = "") -> str:
             transition: all 0.3s;
             color: white;
         }}
+
         .platform-header:hover {{
             opacity: 0.9;
         }}
+
         .platform-header i.fa-chevron-up {{
             transition: transform 0.3s;
         }}
+
         .platform-header.active i.fa-chevron-up {{
             transform: rotate(180deg);
         }}
-        .platform-windows {{ background: #0078d4; }}
-        .platform-ios {{ background: #86868b; }}
-        .platform-android {{ background: #3ddc84; color: #1a1a2e; }}
-        .platform-linux {{ background: #fabd2f; color: #1a1a2e; }}
+
+        .platform-windows {{
+            background: #0078d4;
+        }}
+
+        .platform-ios {{
+            background: #86868b;
+        }}
+
+        .platform-android {{
+            background: #3ddc84;
+            color: #1a1a2e;
+        }}
+
+        .platform-linux {{
+            background: #fabd2f;
+            color: #1a1a2e;
+        }}
+
         .platform-content {{
             display: none;
             padding: 15px;
         }}
-        .platform-content.windows {{ background: rgba(0, 120, 212, 0.08); }}
-        .platform-content.ios {{ background: rgba(134, 134, 139, 0.08); }}
-        .platform-content.android {{ background: rgba(61, 220, 132, 0.15); }}
-        .platform-content.linux {{ background: rgba(250, 189, 47, 0.15); }}
-        .platform-content.active {{ display: block; }}
+
+        .platform-content.windows {{
+            background: rgba(0, 120, 212, 0.08);
+        }}
+
+        .platform-content.ios {{
+            background: rgba(134, 134, 139, 0.08);
+        }}
+
+        .platform-content.android {{
+            background: rgba(61, 220, 132, 0.15);
+        }}
+
+        .platform-content.linux {{
+            background: rgba(250, 189, 47, 0.15);
+        }}
+
+        .platform-content.active {{
+            display: block;
+        }}
+
         .apps-list {{
             display: flex;
             flex-direction: column;
             gap: 10px;
         }}
+
         .app-item {{
             background: white;
             border: 1px solid #e8e8e8;
@@ -587,11 +660,13 @@ def generate_html_page(user, domain: str = "") -> str:
             gap: 12px;
             transition: all 0.2s;
         }}
+
         .app-item:hover {{
             border-color: #4a90a4;
             transform: translateX(4px);
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }}
+
         .app-icon {{
             width: 36px;
             height: 36px;
@@ -603,14 +678,17 @@ def generate_html_page(user, domain: str = "") -> str:
             font-size: 1.1em;
             flex-shrink: 0;
         }}
+
         .app-info {{
             flex: 1;
         }}
+
         .app-name {{
             font-weight: 600;
             color: #1a1a2e;
             font-size: 0.9em;
         }}
+
         .recommended-badge {{
             background: #4a90a4;
             color: white;
@@ -619,6 +697,7 @@ def generate_html_page(user, domain: str = "") -> str:
             border-radius: 4px;
             margin-left: 5px;
         }}
+
         .modal {{
             display: none;
             position: fixed;
@@ -632,8 +711,16 @@ def generate_html_page(user, domain: str = "") -> str:
             justify-content: center;
             animation: fadeIn 0.3s;
         }}
-        .modal.show {{ display: flex; }}
-        @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
+
+        .modal.show {{
+            display: flex;
+        }}
+
+        @keyframes fadeIn {{
+            from {{ opacity: 0; }}
+            to {{ opacity: 1; }}
+        }}
+
         .modal-content {{
             background: #ffffff;
             padding: 30px;
@@ -643,12 +730,14 @@ def generate_html_page(user, domain: str = "") -> str:
             animation: slideUp 0.3s;
             text-align: center;
         }}
+
         .modal-header {{
             font-size: 1.3em;
             margin-bottom: 20px;
             color: #1a1a2e;
             font-weight: 600;
         }}
+
         .qr-code {{
             background: white;
             padding: 15px;
@@ -659,10 +748,12 @@ def generate_html_page(user, domain: str = "") -> str:
             justify-content: center;
             align-items: center;
         }}
+
         .qr-code img {{
             width: 200px;
             height: 200px;
         }}
+
         .modal-close {{
             background: #1a1a2e;
             color: white;
@@ -674,19 +765,52 @@ def generate_html_page(user, domain: str = "") -> str:
             transition: all 0.2s;
             margin-top: 15px;
         }}
-        .modal-close:hover {{ background: #2d2d44; }}
+
+        .modal-close:hover {{
+            background: #2d2d44;
+        }}
+
         @media (max-width: 768px) {{
-            .lang-switch-container {{ top: 15px; right: 15px; }}
-            .header {{ padding: 10px 20px; }}
-            .header h1 {{ font-size: 1.3em; }}
-            .main {{ padding: 15px 15px 30px; gap: 15px; }}
-            .config-card, .platform-section {{ padding: 18px; }}
-            .button-group {{ flex-direction: column; }}
-            .btn {{ width: 100%; justify-content: center; }}
-            .number-row {{ font-size: 20px; letter-spacing: 6px; }}
-            .platform-header {{ padding: 12px 14px; font-size: 0.85em; }}
-            .app-item {{ flex-direction: column; text-align: center; gap: 10px; }}
-            .app-info {{ width: 100%; }}
+            .lang-switch-container {{
+                top: 15px;
+                right: 15px;
+            }}
+            .header {{
+                padding: 10px 20px;
+            }}
+            .header h1 {{
+                font-size: 1.3em;
+            }}
+            .main {{
+                padding: 15px 15px 30px;
+                gap: 15px;
+            }}
+            .config-card, .platform-section {{
+                padding: 18px;
+            }}
+            .button-group {{
+                flex-direction: column;
+            }}
+            .btn {{
+                width: 100%;
+                justify-content: center;
+            }}
+            .number-row {{
+                font-size: 20px;
+                letter-spacing: 6px;
+            }}
+            .platform-header {{
+                padding: 12px 14px;
+                font-size: 0.85em;
+            }}
+            .app-item {{
+                flex-direction: column;
+                text-align: center;
+                gap: 10px;
+            }}
+            .app-info {{
+                width: 100%;
+            }}
         }}
     </style>
 </head>
@@ -747,11 +871,137 @@ def generate_html_page(user, domain: str = "") -> str:
             </div>
         </div>
 
-        <!-- Platform Apps Section (без изменений) -->
+        <!-- Platform Apps Section -->
         <div class="platform-section">
             <h2 class="platform-section-title" data-i18n="downloadApps">Download App</h2>
             <div class="platform-accordion">
-                <!-- ... ваш HTML для платформ ... -->
+                <!-- Windows -->
+                <div class="platform-item">
+                    <div class="platform-header platform-windows" onclick="togglePlatform('windows')">
+                        <span><i class="fab fa-windows" style="margin-right:0.75rem;"></i><span data-i18n="windows">Windows</span></span>
+                        <i class="fas fa-chevron-up"></i>
+                    </div>
+                    <div class="platform-content windows" id="content-windows">
+                        <div class="apps-list">
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#06b6d4;"><i class="fas fa-shield-alt"></i></div>
+                                <div class="app-info"><span class="app-name">Hiddify <span class="recommended-badge" data-i18n="recommended">★</span></span></div>
+                                <a href="https://github.com/hiddify/hiddify-next" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#0078d4;"><i class="fas fa-bolt"></i></div>
+                                <div class="app-info"><span class="app-name">v2rayN</span></div>
+                                <a href="https://github.com/2dust/v2rayN" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#dc2626;"><i class="fas fa-window-maximize"></i></div>
+                                <div class="app-info"><span class="app-name">Mihomo</span></div>
+                                <a href="https://github.com/MetaCubeX/mihomo" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#f97316;"><i class="fas fa-cube"></i></div>
+                                <div class="app-info"><span class="app-name">Sing-Box</span></div>
+                                <a href="https://github.com/SagerNet/sing-box" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#4b5563;"><i class="fas fa-box"></i></div>
+                                <div class="app-info"><span class="app-name">Nekobox</span></div>
+                                <a href="https://github.com/MatsuriDayo/nekoray" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- iOS & macOS -->
+                <div class="platform-item">
+                    <div class="platform-header platform-ios" onclick="togglePlatform('ios')">
+                        <span><i class="fab fa-apple" style="margin-right:0.75rem;"></i><span data-i18n="ios">iOS & MAC OS</span></span>
+                        <i class="fas fa-chevron-up"></i>
+                    </div>
+                    <div class="platform-content ios" id="content-ios">
+                        <div class="apps-list">
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#06b6d4;"><i class="fas fa-shield-alt"></i></div>
+                                <div class="app-info"><span class="app-name">Hiddify <span class="recommended-badge" data-i18n="recommended">★</span></span></div>
+                                <a href="https://github.com/hiddify/hiddify-next" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#5ac8fa;"><i class="fas fa-bolt"></i></div>
+                                <div class="app-info"><span class="app-name">Egern</span></div>
+                                <a href="https://apps.apple.com/us/app/egern/id1616105820" target="_blank" class="btn btn-appstore"><i class="fab fa-apple"></i><span data-i18n="appStore">App Store</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#8b5cf6;"><i class="fas fa-rocket"></i></div>
+                                <div class="app-info"><span class="app-name">Shadowrocket</span></div>
+                                <a href="https://apps.apple.com/app/shadowrocket/id932747118" target="_blank" class="btn btn-appstore"><i class="fab fa-apple"></i><span data-i18n="appStore">App Store</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#f97316;"><i class="fas fa-cube"></i></div>
+                                <div class="app-info"><span class="app-name">sing-box</span></div>
+                                <a href="https://github.com/SagerNet/sing-box" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Android -->
+                <div class="platform-item">
+                    <div class="platform-header platform-android" onclick="togglePlatform('android')">
+                        <span><i class="fab fa-android" style="margin-right:0.75rem;"></i><span data-i18n="android">Android</span></span>
+                        <i class="fas fa-chevron-up"></i>
+                    </div>
+                    <div class="platform-content android" id="content-android">
+                        <div class="apps-list">
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#06b6d4;"><i class="fas fa-shield-alt"></i></div>
+                                <div class="app-info"><span class="app-name">Hiddify <span class="recommended-badge" data-i18n="recommended">★</span></span></div>
+                                <a href="https://github.com/hiddify/hiddify-next" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#dc2626;"><i class="fas fa-window-maximize"></i></div>
+                                <div class="app-info"><span class="app-name">Mihomo</span></div>
+                                <a href="https://github.com/MetaCubeX/mihomo" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#4b5563;"><i class="fas fa-box"></i></div>
+                                <div class="app-info"><span class="app-name">NekoBox</span></div>
+                                <a href="https://github.com/MatsuriDayo/NekoBoxForAndroid" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#10b981;"><i class="fab fa-google-play"></i></div>
+                                <div class="app-info"><span class="app-name">V2Box</span></div>
+                                <a href="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box" target="_blank" class="btn btn-googleplay"><i class="fab fa-google-play"></i><span data-i18n="playStore">Google Play</span></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Linux -->
+                <div class="platform-item">
+                    <div class="platform-header platform-linux" onclick="togglePlatform('linux')">
+                        <span><i class="fab fa-linux" style="margin-right:0.75rem;"></i><span data-i18n="linux">Linux</span></span>
+                        <i class="fas fa-chevron-up"></i>
+                    </div>
+                    <div class="platform-content linux" id="content-linux">
+                        <div class="apps-list">
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#06b6d4;"><i class="fas fa-shield-alt"></i></div>
+                                <div class="app-info"><span class="app-name">Hiddify <span class="recommended-badge" data-i18n="recommended">★</span></span></div>
+                                <a href="https://github.com/hiddify/hiddify-next" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#dc2626;"><i class="fas fa-window-maximize"></i></div>
+                                <div class="app-info"><span class="app-name">Mihomo</span></div>
+                                <a href="https://github.com/MetaCubeX/mihomo" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                            <div class="app-item">
+                                <div class="app-icon" style="background:#f97316;"><i class="fas fa-cube"></i></div>
+                                <div class="app-info"><span class="app-name">sing-box</span></div>
+                                <a href="https://github.com/SagerNet/sing-box" target="_blank" class="btn btn-github"><i class="fab fa-github"></i><span data-i18n="download">Download</span></a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </main>
@@ -767,7 +1017,7 @@ def generate_html_page(user, domain: str = "") -> str:
     </div>
 
     <script>
-        // Генерация фоновых чисел
+        // Generate background numbers
         function generateNumbers() {{
             const container = document.getElementById('numbersBg');
             const rowCount = 14;
@@ -785,7 +1035,7 @@ def generate_html_page(user, domain: str = "") -> str:
             }}
         }}
 
-        // Аккордеон для платформ
+        // Platform accordion
         function togglePlatform(platform) {{
             const header = event.currentTarget;
             const content = document.getElementById('content-' + platform);
@@ -793,7 +1043,7 @@ def generate_html_page(user, domain: str = "") -> str:
             content.classList.toggle('active');
         }}
 
-        // Автооткрытие платформы
+        // Auto-detect platform
         function detectAndOpenPlatform() {{
             const ua = navigator.userAgent.toLowerCase();
             let platform = 'windows';
@@ -804,7 +1054,7 @@ def generate_html_page(user, domain: str = "") -> str:
             if (header) header.click();
         }}
 
-        // Перевод
+        // Translations
         const translations = {{
             en: {{
                 welcome: 'Welcome, {user.username}',
