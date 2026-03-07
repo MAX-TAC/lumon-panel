@@ -145,7 +145,7 @@ pb_key=$(echo "$xray_keys" | awk -F': ' '/Password/ {print $2}' | tr -d '[:space
 s_id=$(openssl rand -hex 8)
 
 # Generate Shadowsocks password (2022-blake3-aes-128-gcm key)
-SS_pass=$(openssl rand -base64 16)
+SS_pass=$(openssl rand -hex 16)
 
 # Save keys to .keys file for subscription.py
 cat > /etc/xray/.keys << EOF
@@ -414,8 +414,8 @@ wget -q https://github.com/apernet/hysteria/releases/download/app/v${HY_VERSION}
 chmod +x /usr/local/bin/hysteria
 
 # Generate auth secrets
-HY_AUTH=$(openssl rand -base64 32)
-HY_OBFS=$(openssl rand -base64 16)
+HY_AUTH=$(openssl rand -hex 32)
+HY_OBFS=$(openssl rand -hex 16)
 
 # Create config (TLS paths will be set after certbot)
 cat > /etc/hysteria/config.yaml << EOF
