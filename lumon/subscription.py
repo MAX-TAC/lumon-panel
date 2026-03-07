@@ -82,7 +82,7 @@ class VlessXhttpGenerator:
 
         uuid = client.get('id', '')
         port = self.inbound.get('port', 443)
-        ip = domain or self.reader.get_external_ip()
+        ip = self.reader.get_external_ip()
 
         # Reality settings
         stream = self.inbound.get('streamSettings', {})
@@ -127,45 +127,27 @@ class Shadowsocks2022Generator:
         if not self.inbound:
             self.inbound = self.reader.get_inbound_by_protocol("shadowsocks")
 
-    def get_client_by_email(self, email: str) -> Optional[dict]:
-        clients = self.inbound.get('settings', {}).get('clients', [])
-        for client in clients:
-            if client.get('email') == email:
-                # Добавляем общие настройки inbound'а
-                client['port'] = self.inbound.get('port')
-                client['method'] = self.inbound.get('settings', {}).get('method')
-                client['server_password'] = self.inbound.get('settings', {}).get('password')
-                return client
-        return None
-
     def generate_link_for_email(self, email: str, domain: str = None) -> str:
         client = self.get_client_by_email(email)
         if not client:
             return ""
 
-        ip = domain or self.reader.get_external_ip()
+        ip = self.reader.get_external_ip()
         port = client.get('port', 443)
         method = client.get('method', '2022-blake3-aes-128-gcm')
         server_pass = client.get('server_password', '')
         user_pass = client.get('password', '')
 
-        # Убираем возможные символы '=' из паролей (стандарт требует base64 без паддинга)
-        server_pass = server_pass.rstrip('=')
-        user_pass = user_pass.rstrip('=')
+        # НЕ удаляем '=', оставляем как есть
+        password_combined = f"{server_pass}:{user_pass}" if server_pass and user_pass else (server_pass or user_pass)
 
-        if server_pass and user_pass:
-            password_combined = f"{server_pass}:{user_pass}"
-        else:
-            password_combined = server_pass or user_pass
+        # Кодируем ТОЛЬКО method:password (без @ip:port)
+        user_part = f"{method}:{password_combined}"
+        user_part_b64 = base64.urlsafe_b64encode(user_part.encode()).decode().rstrip('=')  # rstrip('=') убираем только лишний паддинг, но внутри '=' сохраняются
 
-        # Формат SIP002: method:password@host:port
-        user_info = f"{method}:{password_combined}@{ip}:{port}"
-        user_info_b64 = base64.urlsafe_b64encode(user_info.encode()).decode().rstrip('=')
-
+        # Формируем ссылку: ss://base64_part@ip:port?type=tcp#SHADOWSOCKS
         remark = urllib.parse.quote("SHADOWSOCKS", safe='')
-        # Добавляем параметр type=tcp, как в шаблоне
-        return f"ss://{user_info_b64}?type=tcp#{remark}"
-
+        return f"ss://{user_part_b64}@{ip}:{port}?type=tcp#{remark}"
 
 # ==================== УНИВЕРСАЛЬНАЯ ФУНКЦИЯ ====================
 
