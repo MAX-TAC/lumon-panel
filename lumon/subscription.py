@@ -43,62 +43,67 @@ class XrayConfigReader:
         return {}
 
     def get_external_ip(self) -> str:
-        """Возвращает IPv4-адрес сервера... (docstring)"""
+        """Возвращает IPv4-адрес сервера.
+        Сначала пытается получить локальный IP через hostname -I,
+        затем через сокет (определяет IP маршрута по умолчанию),
+        затем опрашивает внешние сервисы.
+        Результат кешируется после первого успешного получения.
+        """
         if self._cached_ip is not None:
             return self._cached_ip
 
         ip = None
-        
-    # 1. Локальный IPv4 через hostname -I
-    try:
-        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
-        if result.returncode == 0:
-            candidates = result.stdout.strip().split()
-            for addr in candidates:
-                if '.' in addr and ':' not in addr:
-                    ip = addr
-                    break
-    except Exception:
-        pass
 
-    # 2. Если не нашли, используем сокетный метод (определяет IP основного интерфейса)
-    if not ip:
+        # 1. Локальный IPv4 через hostname -I
         try:
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                # Подключаемся к внешнему DNS, но реального соединения не происходит
-                s.connect(('8.8.8.8', 80))
-                ip = s.getsockname()[0]
+            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=2)
+            if result.returncode == 0:
+                candidates = result.stdout.strip().split()
+                for addr in candidates:
+                    if '.' in addr and ':' not in addr:
+                        ip = addr
+                        break
         except Exception:
             pass
 
-    # 3. Если всё ещё нет, пробуем внешние сервисы (только если есть curl)
-    if not ip:
-        try:
-            # Проверим наличие curl
-            subprocess.run(['curl', '--version'], capture_output=True, timeout=1)
-            services = [
-                ['curl', '-4', '-s', 'icanhazip.com'],
-                ['curl', '-4', '-s', 'ifconfig.me'],
-                ['curl', '-4', '-s', 'api.ipify.org']
-            ]
-            for cmd in services:
-                try:
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-                    if result.returncode == 0:
-                        candidate = result.stdout.strip()
-                        if re.match(r'^\d+\.\d+\.\d+\.\d+$', candidate):
-                            ip = candidate
-                            break
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        # 2. Если не нашли, используем сокетный метод (определяет IP основного интерфейса)
+        if not ip:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                    # Подключаемся к внешнему DNS, но реального соединения не происходит
+                    s.connect(('8.8.8.8', 80))
+                    ip = s.getsockname()[0]
+            except Exception:
+                pass
 
-    # Кешируем результат
-    if ip:
-        self._cached_ip = ip
-    else:
-        ip = 'localhost'  # крайний случай
+        # 3. Если всё ещё нет, пробуем внешние сервисы (только если есть curl)
+        if not ip:
+            try:
+                # Проверим наличие curl
+                subprocess.run(['curl', '--version'], capture_output=True, timeout=1)
+                services = [
+                    ['curl', '-4', '-s', 'icanhazip.com'],
+                    ['curl', '-4', '-s', 'ifconfig.me'],
+                    ['curl', '-4', '-s', 'api.ipify.org']
+                ]
+                for cmd in services:
+                    try:
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                        if result.returncode == 0:
+                            candidate = result.stdout.strip()
+                            if re.match(r'^\d+\.\d+\.\d+\.\d+$', candidate):
+                                ip = candidate
+                                break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        # Кешируем результат
+        if ip:
+            self._cached_ip = ip
+        else:
+            ip = 'localhost'
 
         return ip
 
