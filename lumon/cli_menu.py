@@ -155,7 +155,7 @@ def create_user():
     # Generate Shadowsocks user password (2022 multi-user format)
     try:
         ss_user_pass = subprocess.run(
-            ['openssl', 'rand', '-base64', '16'],
+            ['openssl', 'rand', '-hex', '16'],
             capture_output=True, text=True, check=True
         ).stdout.strip()
     except Exception:
