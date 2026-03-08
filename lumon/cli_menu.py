@@ -135,7 +135,7 @@ def create_user():
     print("\n👤 Create New User")
     print("-" * 40)
     
-    username = input("Enter username (no spaces): ").strip()
+    username = input("Enter username (only contain letters, numbers, and underscores _ : ").strip()
     
     # Проверка на пустое имя
     if not username:
