@@ -496,10 +496,26 @@ cat > /etc/hysteria/config.json << EOF
   "disableUDP": false,
   "udpIdleTimeout": "60s",
   "resolver": {
-    "type": "udp",
-    "udp": {
+    "type": "tls",
+    "tcp": {
       "addr": "8.8.8.8:53",
       "timeout": "4s"
+    },
+    "udp": {
+      "addr": "8.8.4.4:53",
+      "timeout": "4s"
+    },
+    "tls": {
+      "addr": "1.1.1.1:853",
+      "timeout": "10s",
+      "sni": "cloudflare-dns.com",
+      "insecure": false
+    },
+    "https": {
+      "addr": "1.1.1.1:443",
+      "timeout": "10s",
+      "sni": "cloudflare-dns.com",
+      "insecure": false
     }
   },
   "outbounds": [
