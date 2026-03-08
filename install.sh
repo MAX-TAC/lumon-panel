@@ -478,11 +478,7 @@ cat > /etc/hysteria/config.json << EOF
     "maxIncomingStreams": 1024,
     "disablePathMTUDiscovery": false
   },
-  "bandwidth": {
-    "up": "200 mbps",
-    "down": "200 mbps"
-  },
-  "ignoreClientBandwidth": false,
+  "ignoreClientBandwidth": true,
   "speedTest": false,
   "disableUDP": false,
   "udpIdleTimeout": "60s",
