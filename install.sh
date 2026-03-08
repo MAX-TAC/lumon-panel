@@ -419,17 +419,56 @@ HY_OBFS=$(openssl rand -hex 16)
 
 # Create config (TLS paths will be set after certbot)
 cat > /etc/hysteria/config.yaml << EOF
-listen: :443
+listen: :${hy_port}
 tls:
     cert: /etc/letsencrypt/live/${SUB_DOMAIN}/fullchain.pem
     key: /etc/letsencrypt/live/${SUB_DOMAIN}/privkey.pem
 auth:
-    type: password
-    password: ${HY_AUTH}
+    type: userpass
+    userpass:
 obfs:
     type: salamander
     salamander:
         password: ${HY_OBFS}
+quic:
+  initStreamReceiveWindow: 8388608 
+  maxStreamReceiveWindow: 8388608 
+  initConnReceiveWindow: 20971520 
+  maxConnReceiveWindow: 20971520 
+  maxIdleTimeout: 30s 
+  maxIncomingStreams: 1024 
+  disablePathMTUDiscovery: false
+bandwidth:
+  up: 200 mbps
+  down: 200 mbps
+ignoreClientBandwidth: false
+speedTest: false
+disableUDP: false
+udpIdleTimeout: 60s
+resolver:
+  type: udp | tcp | tls | https 
+  tcp:
+    addr: 8.8.8.8:53 
+    timeout: 4s 
+  udp:
+    addr: 8.8.4.4:53 
+    timeout: 4s
+  tls:
+    addr: 1.1.1.1:853 
+    timeout: 10s
+    sni: cloudflare-dns.com 
+    insecure: false 
+  https:
+    addr: 1.1.1.1:443 
+    timeout: 10s
+    sni: cloudflare-dns.com
+    insecure: false
+outbounds:
+    type: direct
+    direct:
+      mode: auto 
+      bindDevice: ${brief}  
+      fastOpen: false 
 log:
     level: info
     output: /var/log/lumon/hysteria.log
