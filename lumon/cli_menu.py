@@ -135,8 +135,20 @@ def create_user():
     print("-" * 40)
     
     username = input("Enter username (no spaces): ").strip()
-    if not username or ' ' in username:
-        print("❌ Username cannot be empty or contain spaces")
+    
+    # Проверка на пустое имя
+    if not username:
+        print("❌ Username cannot be empty")
+        return
+    
+    # Проверка на пробелы
+    if ' ' in username:
+        print("❌ Username cannot contain spaces")
+        return
+    
+    # Проверка на допустимые символы: только буквы, цифры и подчёркивание
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        print("❌ Username can only contain letters, numbers, and underscores (_)")
         return
     
     # Check if user already exists in DB
@@ -150,16 +162,17 @@ def create_user():
     # Generate credentials
     user_uuid = str(uuid.uuid4())
     sub_token = secrets.token_urlsafe(32)
-    hysteria_auth = secrets.token_urlsafe(16)  # Будет использоваться как пароль в Hysteria2
+    hysteria_auth = secrets.token_urlsafe(16)
     
-    # Generate Shadowsocks user password (2022 multi-user format) - теперь hex
-    try:
-        ss_user_pass = subprocess.run(
-            ['openssl', 'rand', '-hex', '16'],
-            capture_output=True, text=True, check=True
-        ).stdout.strip()
-    except Exception:
-        ss_user_pass = secrets.token_hex(16)  # Fallback
+    # Generate Shadowsocks user password (2022 multi-user format) - base64 without / and +
+    def generate_safe_base64(byte_length=16):
+        while True:
+            rand_bytes = secrets.token_bytes(byte_length)
+            b64 = base64.b64encode(rand_bytes).decode().rstrip('=')
+            if '/' not in b64 and '+' not in b64:
+                return b64
+
+    ss_user_pass = generate_safe_base64(16)
     
     # Create user in database
     new_user = User(
