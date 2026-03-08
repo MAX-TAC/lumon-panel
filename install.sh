@@ -396,89 +396,124 @@ echo ""
 # STEP 6: Install Hysteria2
 # ============================================
 log_info "🚀 Step 6/9: Installing Hysteria2..."
-mkdir -p /etc/hysteria
 
-# Get latest version (fixed jq filter)
-HY_VERSION=$(curl -s https://api.github.com/repos/apernet/hysteria/releases/latest | jq -r '.tag_name' | sed 's/app\/v//')
-
-# Fallback if version is empty
-if [ -z "$HY_VERSION" ] || [ "$HY_VERSION" = "null" ]; then
-    log_warning "Could not fetch latest Hysteria version, using fallback..."
-    HY_VERSION="2.4.1"  # Known stable version
+# --- Определение активного сетевого интерфейса ---
+log_info "🔌 Detecting active network interface..."
+ACTIVE_INTERFACE=$(ip -br link | awk '$2 == "UP" && $1 != "lo" {print $1; exit}')
+if [ -z "$ACTIVE_INTERFACE" ]; then
+    log_warning "Could not detect active interface, using eth0 as fallback"
+    ACTIVE_INTERFACE="eth0"
+else
+    log_success "Active interface: $ACTIVE_INTERFACE"
 fi
 
+# --- Запрос порта ---
+echo ""
+log_info "🔌 Hysteria2 Port Configuration:"
+log_info "Default port is 443. If 443 is already in use (by Nginx or Xray), choose another port like 8443."
+read -p "Enter port for Hysteria2 (default 443): " HY_PORT
+HY_PORT=${HY_PORT:-443}
+if ! [[ "$HY_PORT" =~ ^[0-9]+$ ]] || [ "$HY_PORT" -lt 1 ] || [ "$HY_PORT" -gt 65535 ]; then
+    log_error "Invalid port. Using default 443."
+    HY_PORT=443
+fi
+# Проверка, что порт не занят
+if ss -tlnp | grep -q ":${HY_PORT} "; then
+    log_warning "Port $HY_PORT is already in use. Hysteria2 may fail to start."
+fi
+
+# --- Генерация obfs-пароля для salamander ---
+HY_OBFS=$(openssl rand -hex 16)
+log_success "Obfuscation password generated: $HY_OBFS"
+
+# --- Определение версии Hysteria2 ---
+HY_VERSION=$(curl -s https://api.github.com/repos/apernet/hysteria/releases/latest | jq -r '.tag_name' | sed 's/app\/v//')
+if [ -z "$HY_VERSION" ] || [ "$HY_VERSION" = "null" ]; then
+    log_warning "Could not fetch latest Hysteria version, using fallback..."
+    HY_VERSION="2.4.1"
+fi
 log_info "Latest Hysteria version: ${HY_VERSION}"
 
-# Download and install
+# --- Скачивание и установка бинарника ---
 wget -q https://github.com/apernet/hysteria/releases/download/app/v${HY_VERSION}/hysteria-linux-amd64 -O /usr/local/bin/hysteria
 chmod +x /usr/local/bin/hysteria
 
-# Generate auth secrets
-HY_AUTH=$(openssl rand -hex 32)
-HY_OBFS=$(openssl rand -hex 16)
-
-# Create config (TLS paths will be set after certbot)
-cat > /etc/hysteria/config.yaml << EOF
-listen: :${hy_port}
-tls:
-    cert: /etc/letsencrypt/live/${SUB_DOMAIN}/fullchain.pem
-    key: /etc/letsencrypt/live/${SUB_DOMAIN}/privkey.pem
-auth:
-    type: userpass
-    userpass:
-obfs:
-    type: salamander
-    salamander:
-        password: ${HY_OBFS}
-quic:
-  initStreamReceiveWindow: 8388608 
-  maxStreamReceiveWindow: 8388608 
-  initConnReceiveWindow: 20971520 
-  maxConnReceiveWindow: 20971520 
-  maxIdleTimeout: 30s 
-  maxIncomingStreams: 1024 
-  disablePathMTUDiscovery: false
-bandwidth:
-  up: 200 mbps
-  down: 200 mbps
-ignoreClientBandwidth: false
-speedTest: false
-disableUDP: false
-udpIdleTimeout: 60s
-resolver:
-  type: udp | tcp | tls | https 
-  tcp:
-    addr: 8.8.8.8:53 
-    timeout: 4s 
-  udp:
-    addr: 8.8.4.4:53 
-    timeout: 4s
-  tls:
-    addr: 1.1.1.1:853 
-    timeout: 10s
-    sni: cloudflare-dns.com 
-    insecure: false 
-  https:
-    addr: 1.1.1.1:443 
-    timeout: 10s
-    sni: cloudflare-dns.com
-    insecure: false
-outbounds:
-    type: direct
-    direct:
-      mode: auto 
-      bindDevice: ${brief}  
-      fastOpen: false 
-log:
-    level: info
-    output: /var/log/lumon/hysteria.log
+# --- Сохранение параметров для subscription.py ---
+cat >> /etc/xray/.keys << EOF
+hysteria_port: $HY_PORT
+hysteria_obfs_password: $HY_OBFS
 EOF
 
-# Save auth to config for later reference
-jq --arg auth "$HY_AUTH" --arg obfs "$HY_OBFS" '.hysteria_auth = $auth | .hysteria_obfs = $obfs' /etc/lumon/lumon_config.json > /tmp/lc.json && mv /tmp/lc.json /etc/lumon/lumon_config.json
+# --- Определение путей к сертификатам decoy-домена ---
+CERT_DIR="/etc/letsencrypt/live/$DECOY_DOMAIN"
+if [ ! -d "$CERT_DIR" ]; then
+    log_warning "Certificates for $DECOY_DOMAIN not found. Attempting to obtain them now..."
+    certbot --nginx -d $DECOY_DOMAIN --non-interactive --agree-tos --email ${LETSENCRYPT_EMAIL:-admin@example.com} || true
+fi
 
-# Create systemd service
-cat > /etc/systemd/system/hysteria.service << EOF
+# --- Создание конфига Hysteria2 в формате JSON ---
+cat > /etc/hysteria/config.json << EOF
+{
+  "listen": ":${HY_PORT}",
+  "tls": {
+    "cert": "${CERT_DIR}/fullchain.pem",
+    "key": "${CERT_DIR}/privkey.pem"
+  },
+  "auth": {
+    "type": "userpass",
+    "userpass": {}
+  },
+  "obfs": {
+    "type": "salamander",
+    "salamander": {
+      "password": "${HY_OBFS}"
+    }
+  },
+  "quic": {
+    "initStreamReceiveWindow": 8388608,
+    "maxStreamReceiveWindow": 8388608,
+    "initConnReceiveWindow": 20971520,
+    "maxConnReceiveWindow": 20971520,
+    "maxIdleTimeout": "30s",
+    "maxIncomingStreams": 1024,
+    "disablePathMTUDiscovery": false
+  },
+  "bandwidth": {
+    "up": "200 mbps",
+    "down": "200 mbps"
+  },
+  "ignoreClientBandwidth": false,
+  "speedTest": false,
+  "disableUDP": false,
+  "udpIdleTimeout": "60s",
+  "resolver": {
+    "type": "udp",
+    "udp": {
+      "addr": "8.8.8.8:53",
+      "timeout": "4s"
+    }
+  },
+  "outbounds": [
+    {
+      "type": "direct",
+      "direct": {
+        "mode": "auto",
+        "bindDevice": "${ACTIVE_INTERFACE}",
+        "fastOpen": false
+      }
+    }
+  ],
+  "log": {
+    "level": "info",
+    "output": "/var/log/lumon/hysteria.log"
+  }
+}
+EOF
+
+chmod 644 /etc/hysteria/config.json
+
+# --- Создание systemd-сервиса ---
+cat > /etc/systemd/system/hysteria.service << 'EOF'
 [Unit]
 Description=Hysteria2 Service
 After=network.target
@@ -486,7 +521,7 @@ After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml
+ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.json
 Restart=on-failure
 LimitNOFILE=65536
 
@@ -496,9 +531,15 @@ EOF
 
 systemctl daemon-reload
 systemctl enable hysteria
-# Don't start yet - need SSL certs first
+systemctl restart hysteria
 
-log_success "Hysteria2 v${HY_VERSION} installed"
+# --- Проверка статуса ---
+if systemctl is-active --quiet hysteria; then
+    log_success "Hysteria2 installed and running on port $HY_PORT"
+else
+    log_error "Hysteria2 failed to start!"
+    log_info "Check logs: journalctl -u hysteria -n 20"
+fi
 
 # ============================================
 # STEP 7: Nginx Configuration
