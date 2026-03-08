@@ -145,7 +145,20 @@ pb_key=$(echo "$xray_keys" | awk -F': ' '/Password/ {print $2}' | tr -d '[:space
 s_id=$(openssl rand -hex 8)
 
 # Generate Shadowsocks password (2022-blake3-aes-128-gcm key)
-SS_pass=$(openssl rand -base64 16 | tr '+/' '-_' | tr -d '\n')
+generate_safe_ss_pass() {
+    local PASS
+    while true; do
+        PASS=$(openssl rand -base64 16 | tr -d '\n')
+        # Проверяем, что нет нежелательных символов
+        if [[ "$PASS" != *"/"* && "$PASS" != *"+"* ]]; then
+            echo "$PASS"
+            return 0
+        fi
+        # Если попали сюда, значит есть / или + – повторяем цикл
+    done
+}
+
+SS_pass=$(generate_safe_ss_pass)
 
 # Save keys to .keys file for subscription.py
 cat > /etc/xray/.keys << EOF
