@@ -13,7 +13,7 @@ import base64
 import subprocess
 import urllib.parse 
 import shutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone  # Добавлен timezone
 from pathlib import Path
 
 import questionary
@@ -130,7 +130,7 @@ def list_users():
     input("\nPress Enter to continue...")
 
 def create_user():
-    """Create new user with auto-generated credentials and add to Xray config"""
+    """Create new user with auto-generated credentials and add to Xray & Hysteria2 configs"""
     print("\n👤 Create New User")
     print("-" * 40)
     
@@ -150,17 +150,16 @@ def create_user():
     # Generate credentials
     user_uuid = str(uuid.uuid4())
     sub_token = secrets.token_urlsafe(32)
-    hysteria_auth = secrets.token_urlsafe(16)
+    hysteria_auth = secrets.token_urlsafe(16)  # Будет использоваться как пароль в Hysteria2
     
-    # Generate Shadowsocks user password (2022 multi-user format)
+    # Generate Shadowsocks user password (2022 multi-user format) - теперь hex
     try:
         ss_user_pass = subprocess.run(
             ['openssl', 'rand', '-hex', '16'],
             capture_output=True, text=True, check=True
         ).stdout.strip()
     except Exception:
-        # Fallback if openssl fails
-        ss_user_pass = secrets.token_urlsafe(16)
+        ss_user_pass = secrets.token_hex(16)  # Fallback
     
     # Create user in database
     new_user = User(
@@ -168,7 +167,7 @@ def create_user():
         uuid=user_uuid,
         sub_token=sub_token,
         hysteria_auth=hysteria_auth,
-        ss_user_pass=ss_user_pass,  # Store for Shadowsocks multi-user
+        ss_user_pass=ss_user_pass,
         is_active=True,
         created_at=datetime.now(timezone.utc)
     )
@@ -178,70 +177,95 @@ def create_user():
     db.refresh(new_user)
     
     # ============================================
-    # ADD USER TO XRAY CONFIG (inline, no separate function)
+    # ADD USER TO XRAY CONFIG (VLESS + Shadowsocks)
     # ============================================
-    config_path = Path("/etc/xray/config.json")
+    xray_config_path = Path("/etc/xray/config.json")
+    xray_updated = False
     
-    if config_path.exists():
+    if xray_config_path.exists():
         try:
-            # Load config
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+            with open(xray_config_path, 'r', encoding='utf-8') as f:
+                xray_config = json.load(f)
             
-            config_updated = False
-            
-            # === Update VLESS XHTTP REALITY inbound ===
-            for inbound in config.get('inbounds', []):
+            # --- VLESS XHTTP REALITY ---
+            for inbound in xray_config.get('inbounds', []):
                 if inbound.get('tag') == 'VLESS XHTTP REALITY':
                     clients = inbound.setdefault('settings', {}).setdefault('clients', [])
-                    
-                    # Check if user already exists (by UUID)
                     if not any(c.get('id') == user_uuid for c in clients):
-                        clients.append({
-                            'id': user_uuid,
-                            'email': username
-                        })
+                        clients.append({'id': user_uuid, 'email': username})
                         print(f"   ✅ Added to VLESS clients: {username}")
-                        config_updated = True
+                        xray_updated = True
                     break
             
-            # === Update SHADOWSOCKS inbound ===
-            for inbound in config.get('inbounds', []):
+            # --- SHADOWSOCKS ---
+            for inbound in xray_config.get('inbounds', []):
                 if inbound.get('tag') == 'SHADOWSOCKS':
                     clients = inbound.setdefault('settings', {}).setdefault('clients', [])
-                    
-                    # Check if user already exists (by email)
                     if not any(c.get('email') == username for c in clients):
-                        clients.append({
-                            'password': ss_user_pass,
-                            'email': username
-                        })
+                        clients.append({'password': ss_user_pass, 'email': username})
                         print(f"   ✅ Added to Shadowsocks clients: {username}")
-                        config_updated = True
+                        xray_updated = True
                     break
             
-            # Save config if changed
-            if config_updated:
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=2)
-                
-                # Restart Xray to apply changes
-                try:
-                    subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
-                    print("   ✅ Xray restarted with new config")
-                except subprocess.CalledProcessError as e:
-                    print(f"   ⚠️  Could not restart Xray: {e}")
-            else:
-                print("   ⚠️  User already exists in config (skipped)")
-                
-        except json.JSONDecodeError as e:
-            print(f"   ❌ Config JSON error: {e}")
+            if xray_updated:
+                with open(xray_config_path, 'w', encoding='utf-8') as f:
+                    json.dump(xray_config, f, indent=2)
         except Exception as e:
             print(f"   ⚠️  Could not update Xray config: {e}")
-            print("   💡 User created in DB only - add to config manually if needed")
+            print("   💡 User created in DB only - add to Xray manually if needed")
     else:
-        print(f"   ⚠️  Config file not found: {config_path}")
-        print("   💡 User created in DB only")
+        print(f"   ⚠️  Xray config not found: {xray_config_path}")
+    
+    # ============================================
+    # ADD USER TO HYSTERIA2 CONFIG
+    # ============================================
+    hysteria_config_path = Path("/etc/hysteria/config.json")
+    hysteria_updated = False
+    
+    if hysteria_config_path.exists():
+        try:
+            with open(hysteria_config_path, 'r', encoding='utf-8') as f:
+                hy_config = json.load(f)
+            
+            # В Hysteria2 используется auth.type = "userpass" с объектом userpass
+            if 'auth' in hy_config and hy_config['auth'].get('type') == 'userpass':
+                if 'userpass' not in hy_config['auth']:
+                    hy_config['auth']['userpass'] = {}
+                
+                # Добавляем пользователя (username: hysteria_auth)
+                if username not in hy_config['auth']['userpass']:
+                    hy_config['auth']['userpass'][username] = hysteria_auth
+                    print(f"   ✅ Added to Hysteria2 users: {username}")
+                    hysteria_updated = True
+                else:
+                    print(f"   ⚠️  User {username} already exists in Hysteria2 config")
+            else:
+                print("   ⚠️  Hysteria2 auth type is not 'userpass', cannot add user automatically")
+            
+            if hysteria_updated:
+                with open(hysteria_config_path, 'w', encoding='utf-8') as f:
+                    json.dump(hy_config, f, indent=2)
+        except Exception as e:
+            print(f"   ⚠️  Could not update Hysteria2 config: {e}")
+    else:
+        print(f"   ⚠️  Hysteria2 config not found: {hysteria_config_path}")
+    
+    # ============================================
+    # RESTART SERVICES IF CONFIGS WERE CHANGED
+    # ============================================
+    if xray_updated:
+        try:
+            subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
+            print("   ✅ Xray restarted")
+        except Exception as e:
+            print(f"   ⚠️  Could not restart Xray: {e}")
+    
+    if hysteria_updated:
+        try:
+            subprocess.run(['systemctl', 'restart', 'hysteria'], check=True, capture_output=True)
+            print("   ✅ Hysteria2 restarted")
+        except Exception as e:
+            print(f"   ⚠️  Could not restart Hysteria2: {e}")
     
     # ============================================
     # GET SUBSCRIPTION DOMAIN FROM CONFIG
@@ -250,7 +274,7 @@ def create_user():
         from lumon.config import config as lumon_config
         sub_domain = lumon_config.subscription_domain
     except Exception:
-        sub_domain = "api.podorozhnik.dlya.ru.net"  # Fallback
+        sub_domain = "example.com"  # Fallback
     
     # Build full subscription URL
     sub_url = f"https://{sub_domain}/sub/{user_uuid}/{sub_token}"
@@ -265,7 +289,8 @@ def create_user():
     print(f"   • Username:     {username}")
     print(f"   • UUID:         {user_uuid}")
     print(f"   • Sub Token:    {sub_token}")
-    print(f"   • SS User Pass: {ss_user_pass[:20]}...")
+    print(f"   • SS User Pass: {ss_user_pass}")
+    print(f"   • Hysteria2 Auth: {hysteria_auth}")
     print(f"\n🔗 Full Subscription URL:")
     print(f"   {sub_url}")
     print(f"\n💡 Open in browser to see all protocols (VLESS, Shadowsocks, Hysteria2)")
@@ -310,7 +335,7 @@ def show_user():
         from lumon.config import config as lumon_config
         sub_domain = lumon_config.subscription_domain
     except Exception:
-        sub_domain = "api.podorozhnik.dlya.ru.net"
+        sub_domain = "example.com"
     
     # Build subscription URL
     sub_url = f"https://{sub_domain}/sub/{user.uuid}/{user.sub_token}"
@@ -323,7 +348,8 @@ def show_user():
     print(f"   • Username:     {user.username}")
     print(f"   • UUID:         {user.uuid}")
     print(f"   • Sub Token:    {user.sub_token}")
-    print(f"   • SS User Pass: {user.ss_user_pass[:20] + '...' if user.ss_user_pass else 'N/A'}")
+    print(f"   • SS User Pass: {ss_user_pass}")
+    print(f"   • Hysteria2 Auth: {hysteria_auth}")
     print(f"\n🔗 Full Subscription URL:")
     print(f"   {sub_url}")
     print(f"\n📱 QR Code for Subscription:")
@@ -336,7 +362,7 @@ def show_user():
     input("\nPress Enter to continue...")
 
 def delete_user():
-    """Delete user from DB and Xray config"""
+    """Delete user from DB and all configs (Xray, Hysteria2)"""
     print("\n🗑️  Delete User")
     print("-" * 40)
     
@@ -376,76 +402,100 @@ def delete_user():
     user_uuid = user.uuid
     
     # ============================================
-    # REMOVE USER FROM XRAY CONFIG
+    # REMOVE FROM XRAY CONFIG (VLESS + Shadowsocks)
     # ============================================
-    config_path = Path("/etc/xray/config.json")
+    xray_config_path = Path("/etc/xray/config.json")
+    xray_updated = False
     
-    if config_path.exists():
+    if xray_config_path.exists():
         try:
-            # Load config
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+            with open(xray_config_path, 'r', encoding='utf-8') as f:
+                xray_config = json.load(f)
             
-            config_updated = False
-            
-            # === Remove from VLESS XHTTP REALITY inbound ===
-            for inbound in config.get('inbounds', []):
+            # --- VLESS XHTTP REALITY ---
+            for inbound in xray_config.get('inbounds', []):
                 if inbound.get('tag') == 'VLESS XHTTP REALITY':
-                    clients = inbound.setdefault('settings', {}).setdefault('clients', [])
+                    clients = inbound.get('settings', {}).get('clients', [])
                     original_len = len(clients)
-                    # Filter out user by UUID
-                    inbound['settings']['clients'] = [c for c in clients if c.get('id') != user_uuid]
-                    if len(inbound['settings']['clients']) < original_len:
+                    clients[:] = [c for c in clients if c.get('id') != user_uuid and c.get('email') != username]
+                    if len(clients) != original_len:
                         print(f"   ✅ Removed from VLESS clients: {username}")
-                        config_updated = True
+                        xray_updated = True
                     break
             
-            # === Remove from SHADOWSOCKS inbound ===
-            for inbound in config.get('inbounds', []):
+            # --- SHADOWSOCKS ---
+            for inbound in xray_config.get('inbounds', []):
                 if inbound.get('tag') == 'SHADOWSOCKS':
-                    clients = inbound.setdefault('settings', {}).setdefault('clients', [])
+                    clients = inbound.get('settings', {}).get('clients', [])
                     original_len = len(clients)
-                    # Filter out user by email
-                    inbound['settings']['clients'] = [c for c in clients if c.get('email') != username]
-                    if len(inbound['settings']['clients']) < original_len:
+                    clients[:] = [c for c in clients if c.get('email') != username]
+                    if len(clients) != original_len:
                         print(f"   ✅ Removed from Shadowsocks clients: {username}")
-                        config_updated = True
+                        xray_updated = True
                     break
             
-            # Save config if changed
-            if config_updated:
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(config, f, indent=2)
-                
-                # Restart Xray to apply changes
-                try:
-                    subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
-                    print("   ✅ Xray restarted with updated config")
-                except subprocess.CalledProcessError as e:
-                    print(f"   ⚠️  Could not restart Xray: {e}")
-            else:
-                print("   ⚠️  User not found in config (DB only)")
-                
-        except json.JSONDecodeError as e:
-            print(f"   ❌ Config JSON error: {e}")
+            if xray_updated:
+                with open(xray_config_path, 'w', encoding='utf-8') as f:
+                    json.dump(xray_config, f, indent=2)
         except Exception as e:
             print(f"   ⚠️  Could not update Xray config: {e}")
-    else:
-        print(f"   ⚠️  Config file not found: {config_path}")
     
     # ============================================
-    # DELETE USER FROM DATABASE
+    # REMOVE FROM HYSTERIA2 CONFIG
     # ============================================
-    db.delete(user)
-    db.commit()
+    hysteria_config_path = Path("/etc/hysteria/config.json")
+    hysteria_updated = False
     
-    print(f"\n✅ User '{username}' deleted successfully!")
-    print(f"   • Removed from database")
-    print(f"   • Removed from Xray config (if present)")
+    if hysteria_config_path.exists():
+        try:
+            with open(hysteria_config_path, 'r', encoding='utf-8') as f:
+                hy_config = json.load(f)
+            
+            if 'auth' in hy_config and 'userpass' in hy_config['auth']:
+                if username in hy_config['auth']['userpass']:
+                    del hy_config['auth']['userpass'][username]
+                    print(f"   ✅ Removed from Hysteria2 users: {username}")
+                    hysteria_updated = True
+                else:
+                    print(f"   ⚠️  User {username} not found in Hysteria2 config")
+            
+            if hysteria_updated:
+                with open(hysteria_config_path, 'w', encoding='utf-8') as f:
+                    json.dump(hy_config, f, indent=2)
+        except Exception as e:
+            print(f"   ⚠️  Could not update Hysteria2 config: {e}")
     
-    db.close()
-
-input("\nPress Enter to continue...")
+    # ============================================
+    # RESTART SERVICES IF CONFIGS WERE CHANGED
+    # ============================================
+    if xray_updated:
+        try:
+            subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
+            print("   ✅ Xray restarted")
+        except Exception as e:
+            print(f"   ⚠️  Could not restart Xray: {e}")
+    
+    if hysteria_updated:
+        try:
+            subprocess.run(['systemctl', 'restart', 'hysteria'], check=True, capture_output=True)
+            print("   ✅ Hysteria2 restarted")
+        except Exception as e:
+            print(f"   ⚠️  Could not restart Hysteria2: {e}")
+    
+    # ============================================
+    # DELETE FROM DATABASE
+    # ============================================
+    try:
+        db.delete(user)
+        db.commit()
+        print(f"\n✅ User '{username}' deleted successfully from database")
+    except Exception as e:
+        db.rollback()
+        print(f"❌ Error deleting user from database: {e}")
+    finally:
+        db.close()
+    
+    input("\nPress Enter to continue...")
 
 def user_menu():
     """User management submenu - Create, Show, Delete only"""
