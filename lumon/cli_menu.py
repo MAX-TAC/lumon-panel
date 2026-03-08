@@ -169,7 +169,7 @@ def create_user():
     def generate_safe_base64(byte_length=16):
         while True:
             rand_bytes = secrets.token_bytes(byte_length)
-            b64 = base64.b64encode(rand_bytes).decode().rstrip('=')
+            b64 = base64.b64encode(rand_bytes).decode()
             if '/' not in b64 and '+' not in b64:
                 return b64
 
