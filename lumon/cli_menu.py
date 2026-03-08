@@ -348,8 +348,8 @@ def show_user():
     print(f"   • Username:     {user.username}")
     print(f"   • UUID:         {user.uuid}")
     print(f"   • Sub Token:    {user.sub_token}")
-    print(f"   • SS User Pass: {ss_user_pass}")
-    print(f"   • Hysteria2 Auth: {hysteria_auth}")
+    print(f"   • SS User Pass: {user.ss_user_pass[:20] + '...' if user.ss_user_pass else 'N/A'}")
+    print(f"   • Hysteria2 Auth: {user.hysteria_auth if user.hysteria_auth else 'N/A'}")
     print(f"\n🔗 Full Subscription URL:")
     print(f"   {sub_url}")
     print(f"\n📱 QR Code for Subscription:")
@@ -401,9 +401,7 @@ def delete_user():
     username = user.username
     user_uuid = user.uuid
     
-    # ============================================
-    # REMOVE FROM XRAY CONFIG (VLESS + Shadowsocks)
-    # ============================================
+    # --- Remove from Xray config ---
     xray_config_path = Path("/etc/xray/config.json")
     xray_updated = False
     
@@ -412,25 +410,25 @@ def delete_user():
             with open(xray_config_path, 'r', encoding='utf-8') as f:
                 xray_config = json.load(f)
             
-            # --- VLESS XHTTP REALITY ---
+            # VLESS
             for inbound in xray_config.get('inbounds', []):
                 if inbound.get('tag') == 'VLESS XHTTP REALITY':
                     clients = inbound.get('settings', {}).get('clients', [])
                     original_len = len(clients)
                     clients[:] = [c for c in clients if c.get('id') != user_uuid and c.get('email') != username]
                     if len(clients) != original_len:
-                        print(f"   ✅ Removed from VLESS clients: {username}")
+                        print(f"   ✅ Removed from VLESS clients")
                         xray_updated = True
                     break
             
-            # --- SHADOWSOCKS ---
+            # Shadowsocks
             for inbound in xray_config.get('inbounds', []):
                 if inbound.get('tag') == 'SHADOWSOCKS':
                     clients = inbound.get('settings', {}).get('clients', [])
                     original_len = len(clients)
                     clients[:] = [c for c in clients if c.get('email') != username]
                     if len(clients) != original_len:
-                        print(f"   ✅ Removed from Shadowsocks clients: {username}")
+                        print(f"   ✅ Removed from Shadowsocks clients")
                         xray_updated = True
                     break
             
@@ -440,9 +438,7 @@ def delete_user():
         except Exception as e:
             print(f"   ⚠️  Could not update Xray config: {e}")
     
-    # ============================================
-    # REMOVE FROM HYSTERIA2 CONFIG
-    # ============================================
+    # --- Remove from Hysteria2 config ---
     hysteria_config_path = Path("/etc/hysteria/config.json")
     hysteria_updated = False
     
@@ -454,10 +450,10 @@ def delete_user():
             if 'auth' in hy_config and 'userpass' in hy_config['auth']:
                 if username in hy_config['auth']['userpass']:
                     del hy_config['auth']['userpass'][username]
-                    print(f"   ✅ Removed from Hysteria2 users: {username}")
+                    print(f"   ✅ Removed from Hysteria2 users")
                     hysteria_updated = True
                 else:
-                    print(f"   ⚠️  User {username} not found in Hysteria2 config")
+                    print(f"   ⚠️  User not found in Hysteria2 config")
             
             if hysteria_updated:
                 with open(hysteria_config_path, 'w', encoding='utf-8') as f:
@@ -465,30 +461,26 @@ def delete_user():
         except Exception as e:
             print(f"   ⚠️  Could not update Hysteria2 config: {e}")
     
-    # ============================================
-    # RESTART SERVICES IF CONFIGS WERE CHANGED
-    # ============================================
+    # --- Restart services ---
     if xray_updated:
         try:
-            subprocess.run(['systemctl', 'restart', 'xray'], check=True, capture_output=True)
+            subprocess.run(['systemctl', 'restart', 'xray'], check=True)
             print("   ✅ Xray restarted")
         except Exception as e:
             print(f"   ⚠️  Could not restart Xray: {e}")
     
     if hysteria_updated:
         try:
-            subprocess.run(['systemctl', 'restart', 'hysteria'], check=True, capture_output=True)
+            subprocess.run(['systemctl', 'restart', 'hysteria'], check=True)
             print("   ✅ Hysteria2 restarted")
         except Exception as e:
             print(f"   ⚠️  Could not restart Hysteria2: {e}")
     
-    # ============================================
-    # DELETE FROM DATABASE
-    # ============================================
+    # --- Delete from database ---
     try:
         db.delete(user)
         db.commit()
-        print(f"\n✅ User '{username}' deleted successfully from database")
+        print(f"\n✅ User '{username}' deleted successfully")
     except Exception as e:
         db.rollback()
         print(f"❌ Error deleting user from database: {e}")
