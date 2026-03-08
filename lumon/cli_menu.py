@@ -520,7 +520,7 @@ def edit_hysteria_config():
     """Edit Hysteria2 config with nano"""
     print_header("Edit Hysteria2 Config")
 
-    config_path = "/etc/hysteria/config.yaml"
+    config_path = "/etc/hysteria/config.json"
     if not os.path.exists(config_path):
         print("❌ Config not found")
         input("Press Enter to continue...")
@@ -611,7 +611,7 @@ def check_hysteria_update():
             run_command(['chmod', '+x', '/usr/local/bin/hysteria'])
 
             # Backup before restart
-            shutil.copy2('/etc/hysteria/config.yaml', '/etc/hysteria/config.yaml.bak')
+            shutil.copy2('/etc/hysteria/config.json', '/etc/hysteria/config.json.bak')
 
             if restart_service('hysteria'):
                 print(f"✅ Updated to v{latest}")
