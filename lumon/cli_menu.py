@@ -5,6 +5,7 @@ Manage users, cores, backups, and monitoring from terminal
 """
 
 import os
+import re
 import sys
 import json
 import uuid
